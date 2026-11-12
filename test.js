@@ -1986,7 +1986,8 @@ test('anything the Class Editor owes a Save says so on the button that fixes it'
   const dimCss = fs.readFileSync('./source.html', 'utf8');
   assert.ok(/header\.attn-dim::after \{ content: ''; position: absolute; inset: 0;/.test(dimCss),
     'the scrim covers the bar it belongs to');
-  assert.ok(/header\.attn-dim #dataEditorBtn,\s*\n\.me-header\.attn-dim #me-save-btn \{ position: relative; z-index: 151; \}/.test(dimCss),
+  // Discard import resolves it too, so it is lit beside Save (2026-11-12).
+  assert.ok(/header\.attn-dim #dataEditorBtn, header\.attn-dim #impDiscardBtn,\s*\n\.me-header\.attn-dim #me-save-btn, \.me-header\.attn-dim #me-imp-discard-btn \{ position: relative; z-index: 151; \}/.test(dimCss),
     'the button that resolves it must sit ABOVE the scrim, in BOTH bars, or the spotlight points at nothing');
   assert.ok(/header\.attn-dim::after \{[^}]*pointer-events: none;/.test(dimCss),
     'the scrim must not swallow clicks — the app stays usable, the check is only owed');
@@ -28190,6 +28191,123 @@ console.log('\nreview 2026-11-11 — part 1: issue bar, narrow screens, keyboard
     // Focus can be seen, and Esc is Cancel on a confirm whatever has focus.
     assert.ok(/\n:focus-visible \{ outline: var\(--bw-ctl\) solid var\(--accent\); outline-offset: -2px; \}/.test(html), 'focus is invisible');
     assert.ok(/if \(e\.key !== 'Escape' \|\| e\.target === _mInput\) return;[\s\S]{0,200}_closeModal\(null\);/.test(APP_SRC), 'Esc does not cancel a confirm');
+  });
+}
+console.log('\nImport — Discard');
+{
+  const run = c => vm.runInContext(c, sandbox);
+  const withFns = (map, body) => {
+    const names = Object.keys(map);
+    names.forEach((n, i) => { sandbox['__o' + i] = run(n); sandbox['__r' + i] = map[n]; run(`${n} = __r${i}`); });
+    try { return body(); } finally { names.forEach((n, i) => run(`${n} = __o${i}`)); }
+  };
+
+  test('[REGRESSION] Discard import takes out only what the import brought', () => {
+    // There was no way back from an import short of a reload — and the comment
+    // promising a Discard had no code under it.
+    const st = run('S');
+    const was = { tree: st.ddlTree, ov: st.deOverrides, scope: st.scope, ms: run('_meState'), marks: run('_meImportMarks') };
+    const said = [];
+    let pending = 'unset';
+    try {
+      st.ddlTree = { OLD: { S: { KEEP: 'mine', OVER: 'imported text' } }, NEW: { X: { F: 'imported' } } };
+      st.deOverrides = { 'OLD/S/OVER/D': { 1: 'imported' }, 'NEW/X/F/D': { 2: 'imported' }, 'OLD/S/KEEP/D': { 3: 'mine' } };
+      st.scope = { type: 'ddl', vol: 'NEW', sv: 'X', name: 'F' };
+      const saved = [{ name: 'A', label: 'A' }];
+      sandbox.__ms = { specs: [{ name: 'A' }, { name: 'IMP' }], selIdx: 1, dirty: true, sections: {} };
+      run('_meState = __ms; _meImportMarks = new Map([["x", "new"]])');
+      sandbox.__imp = { treeBefore: { OLD: { S: { KEEP: 'mine', OVER: 'saved text' } } }, specsBefore: saved,
+        ddlCount: 2, ddlPaths: [['OLD', 'S', 'OVER'], ['NEW', 'X', 'F']], classCount: 1, specs: true,
+        deOverrides: { 'OLD/S/OVER/D': {}, 'NEW/X/F/D': {} } };
+      run('_pendingImport = __imp');
+      const noop = () => {};
+      withFns({ flash: m => said.push(m), _meSyncAttention: noop, renderDDLTree: noop, buildTokenMap: noop,
+                buildUnresolvedRefs: noop, updateDDLEditorState: noop, updateDDLHighlight: noop, selectScope: noop,
+                _meSidebarRefreshIfOpen: noop, _meRenderRight: noop,
+                _kvGet: k => k === 'de_overrides' ? JSON.stringify({ 'OLD/S/OVER/D': { 1: 'saved' }, 'OLD/S/KEEP/D': { 3: 'mine' } }) : null,
+                'window._fmtSetPending': v => { pending = v; }, 'window._fmtGetSaved': () => ({ specs: saved }) },
+        () => run('_discardImportNow()'));
+      eq(JSON.stringify(st.ddlTree), JSON.stringify({ OLD: { S: { KEEP: 'mine', OVER: 'saved text' } } }),
+        'the tree is not back to its saved state (new DDL out, its new volume out, overwritten one restored)');
+      eq(JSON.stringify(st.deOverrides), JSON.stringify({ 'OLD/S/OVER/D': { 1: 'saved' }, 'OLD/S/KEEP/D': { 3: 'mine' } }),
+        'the DE overrides are not back to what storage holds');
+      eq(pending, null, 'the staged classes were kept');
+      eq(JSON.stringify(run('_meState.specs')), JSON.stringify(saved), 'the editor still lists the imported classes');
+      eq(run('_meState.selIdx'), 0, 'the selection points past the list');
+      eq(run('_meState.dirty'), false, 'the editor still owes a Save');
+      eq(run('_meImportMarks.size'), 0, 'the NEW / OVERWRITTEN badges stayed');
+      eq(run('_pendingImport'), null, 'the import is still pending');
+      eq(st.scope, null, 'the editor still shows a DDL that is gone');
+      assert.ok(/Import discarded/.test(said.join()), 'nothing says it happened');
+    } finally {
+      st.ddlTree = was.tree; st.deOverrides = was.ov; st.scope = was.scope;
+      sandbox.__ms = was.ms; sandbox.__mk = was.marks; run('_meState = __ms; _meImportMarks = __mk; _pendingImport = null; _ddlTreeVersion++');
+    }
+  });
+
+  test('[REGRESSION] Discard import is offered wherever the pending import is shown, and asks first', () => {
+    let asked = null;
+    sandbox.__imp = { ddlCount: 1, classCount: 2, specs: true, ddlPaths: [] };
+    run('_pendingImport = __imp');
+    try {
+      withFns({ showConfirm: (q, cb) => { asked = q; } }, () => run('discardImport()'));
+    } finally { run('_pendingImport = null'); }
+    assert.ok(/Discard the import\? The 1 DDL and 2 classes it brought are taken out/.test(asked || ''), 'it does not ask: ' + asked);
+    assert.ok(/id="impDiscardBtn" onclick="discardImport\(\)"/.test(html), 'no Discard in the page header');
+    assert.ok(/id="me-imp-discard-btn" onclick="discardImport\(\)"/.test(html), 'no Discard beside Save in the Class Editor');
+    assert.ok(/for \(const id of \['impDiscardBtn', 'me-imp-discard-btn'\]\)[\s\S]{0,120}impPend \? '' : 'none'/.test(psFnSource('_meSyncAttention')),
+      'the buttons do not follow the pending import');
+    assert.ok(/\{ label: 'Discard import', run: discardImport \}/.test(psFnSource('confirmImport')), 'the import toast offers no Discard');
+  });
+}
+console.log('\nClass Editor — Undo on the last removals without it');
+{
+  const run = c => vm.runInContext(c, sandbox);
+  const withFns = (map, body) => {
+    const names = Object.keys(map);
+    names.forEach((n, i) => { sandbox['__u' + i] = run(n); sandbox['__v' + i] = map[n]; run(`${n} = __v${i}`); });
+    try { return body(); } finally { names.forEach((n, i) => run(`${n} = __u${i}`)); }
+  };
+  const noop = () => {};
+
+  test('[REGRESSION] removing one field override can be undone', () => {
+    const keep = run('_meState');
+    const it = { name: 'A', label: 'A', overrides: { PAN: { type: 'hex-char' }, MTI: { display: 'masked' } } };
+    let offered = null;
+    try {
+      sandbox.__ms = { specs: [it], selIdx: 0, dirty: false, sections: {} };
+      run('_meState = __ms');
+      withFns({ _meFlash: (m, l, act) => { if (act) offered = m; }, _meFmAfterAct: noop }, () => run("_meOvlDelete('PAN')"));
+      eq(JSON.stringify(Object.keys(it.overrides)), '["MTI"]', 'the override was not removed');
+      eq(offered, 'Removed the override on PAN', 'no Undo offered');
+      withFns({ _meFlash: noop, _meRenderSidebar: noop, _meRenderRight: noop }, () => run('_meUndoApply()'));
+      eq(JSON.stringify(run('_meState.specs[0].overrides')), JSON.stringify({ PAN: { type: 'hex-char' }, MTI: { display: 'masked' } }),
+        'undo did not bring it back');
+    } finally { sandbox.__ms = keep; run('_meState = __ms'); }
+  });
+
+  test('[REGRESSION] a deleted class can be undone, back in its place, whole', () => {
+    const keep = run('_meState');
+    const specs = [{ name: 'A', label: 'A' }, { name: 'B', label: 'B', recognizers: [{ type: 'literal' }] }, { name: 'C', label: 'C' }];
+    let undo = null;
+    try {
+      sandbox.__ms = { specs, selIdx: 1, dirty: false, sections: {}, editRule: -1 };
+      run('_meState = __ms');
+      withFns({ confirmDelete: (q, cb) => cb(), _meSetDirty: noop, _meRenderSidebar: noop, _meRenderRight: noop,
+                _meFlash: (m, l, act) => { if (act) undo = act; } }, () => run("_meDeleteItem('msg', 1)"));
+      eq(run('_meState.specs.map(s => s.name).join()'), 'A,C', 'the class was not deleted');
+      assert.ok(undo && /Undo/.test(undo.label), 'no Undo offered');
+      withFns({ _meSetDirty: noop, _meRenderSidebar: noop, _meRenderRight: noop, _meFlash: noop }, () => undo.run());
+      eq(run('_meState.specs.map(s => s.name).join()'), 'A,B,C', 'it did not come back in its place');
+      eq(run('_meState.specs[1].recognizers.length'), 1, 'it did not come back whole');
+      eq(run('_meState.selIdx'), 1, 'the restored class is not selected');
+      // Deleting from elsewhere in the list: the restored class takes the selection.
+      run('_meState.selIdx = 0');
+      withFns({ confirmDelete: (q, cb) => cb(), _meSetDirty: noop, _meRenderSidebar: noop, _meRenderRight: noop,
+                _meFlash: (m, l, act) => { if (act) undo = act; } }, () => run("_meDeleteItem('msg', 2)"));
+      withFns({ _meSetDirty: noop, _meRenderSidebar: noop, _meRenderRight: noop, _meFlash: noop }, () => undo.run());
+      eq(run('_meState.selIdx'), 2, 'the restored class is not the one selected');
+    } finally { sandbox.__ms = keep; run('_meState = __ms'); }
   });
 }
 // ── Summary ───────────────────────────────────────────────────────────────────

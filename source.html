@@ -3245,8 +3245,8 @@ td.c-err  { color: var(--accent2); }
 header.attn-dim, .me-header.attn-dim { position: relative; }
 header.attn-dim::after, .me-header.attn-dim::after { content: ''; position: absolute; inset: 0;
   z-index: 150; background: rgba(0,0,0,0.55); pointer-events: none; }
-header.attn-dim #dataEditorBtn,
-.me-header.attn-dim #me-save-btn { position: relative; z-index: 151; }
+header.attn-dim #dataEditorBtn, header.attn-dim #impDiscardBtn,
+.me-header.attn-dim #me-save-btn, .me-header.attn-dim #me-imp-discard-btn { position: relative; z-index: 151; }
 
 /* "Something is waiting for you here." Keeps pulsing until the import is
    acknowledged: the state can outlast a long look through a bundle of forty
@@ -4544,6 +4544,7 @@ th.me-fm-colhi{color:var(--accent);}
        hangs off a parse, so with nothing parsed they were unreachable.
        Requested 2026-09-04. -->
   <button class="btn" id="baselineBtn" onclick="openBaselines()" title="Baseline Editor — saved parses to compare later ones against">★ Baseline Editor</button>
+  <button class="btn" id="impDiscardBtn" onclick="discardImport()" style="display:none" title="Take the pending import out — everything goes back to how it was last saved">Discard import</button>
   <button class="btn" id="dataEditorBtn" onclick="openMsgEditor()" title="Class Editor — message and file detection, parse specs, field overrides">⊞ Class Editor</button>
   <button class="btn" id="settingsBtn" onclick="openSettings()" title="Settings">⚙</button>
 </header>
@@ -22657,7 +22658,74 @@ let _pendingImport = null;
 
 // Save: the one place an import reaches storage.
 
-// Discard: put back exactly what was saved before it.
+// Discard: put back exactly what was saved before it — only what the import
+// brought: its DDLs (an overwritten one gets its saved text back), their DE
+// overrides, and its classes. A DDL edited and saved since is the user's and
+// stays. Requested 2026-11-12.
+function discardImport() {
+  const imp = _pendingImport;
+  if (!imp) return;
+  const what = [imp.ddlCount ? `${imp.ddlCount} DDL${imp.ddlCount !== 1 ? 's' : ''}` : '',
+                imp.classCount ? `${imp.classCount} class${imp.classCount !== 1 ? 'es' : ''}` : '']
+    .filter(Boolean).join(' and ');
+  const dirty = !!(typeof _meState !== 'undefined' && _meState && _meState.dirty);
+  showConfirm(`Discard the import? The ${what} it brought ${imp.ddlCount + imp.classCount === 1 ? 'is' : 'are'} taken out and everything goes back to how it was last saved.`
+    + (dirty && imp.specs ? ' Unsaved Class Editor changes are discarded with it.' : ''),
+    ok => { if (ok) _discardImportNow(); });
+}
+function _discardImportNow() {
+  const imp = _pendingImport;
+  if (!imp) return;
+  _pendingImport = null;
+  // DDLs: an overwritten one gets its saved text back, a new one goes — with
+  // the subvolume and volume it created, if it created them.
+  const before = imp.treeBefore || {};
+  const gone = [], restored = [];
+  for (const [v, sv, d] of imp.ddlPaths || []) {
+    const old = before[v]?.[sv]?.[d];
+    if (old !== undefined) { if (S.ddlTree[v]?.[sv]) { S.ddlTree[v][sv][d] = old; restored.push([v, sv, d]); } continue; }
+    if (S.ddlTree[v]?.[sv]) delete S.ddlTree[v][sv][d];
+    gone.push([v, sv, d]);
+    if (S.ddlTree[v]?.[sv] && !Object.keys(S.ddlTree[v][sv]).length && !before[v]?.[sv]) delete S.ddlTree[v][sv];
+    if (S.ddlTree[v] && !Object.keys(S.ddlTree[v]).length && !before[v]) delete S.ddlTree[v];
+  }
+  // DE overrides: back to what storage holds — it never took the pending ones.
+  let stored = {};
+  try { stored = JSON.parse(_kvGet('de_overrides') || '{}') || {}; } catch (e) {}
+  for (const k of Object.keys(imp.deOverrides || {})) {
+    if (stored[k] !== undefined) S.deOverrides[k] = stored[k]; else delete S.deOverrides[k];
+  }
+  // Classes: the staged list goes, and the editor shows the saved one.
+  if (imp.specs) {
+    window._fmtSetPending(null);
+    if (typeof _meState !== 'undefined' && _meState && Array.isArray(_meState.specs)) {
+      _meState.specs = JSON.parse(JSON.stringify(window._fmtGetSaved().specs || []));
+      _meState.selIdx = Math.min(_meState.selIdx, _meState.specs.length - 1);
+      _meState.dirty = false;
+      const sb = document.getElementById('me-save-btn'); if (sb) sb.disabled = true;
+    }
+  }
+  _meImportMarks = new Map();
+  // The DDL on screen: gone → the editor empties; overwritten → it reloads.
+  const sc = S.scope, hit = list => sc && list.some(([v, sv, d]) => sc.vol === v && sc.sv === sv && sc.name === d);
+  if (hit(gone)) {
+    S.scope = null; S.editorBaseline = null;
+    const ed = document.getElementById('ddlEditor'); if (ed) ed.value = '';
+    const sp = document.getElementById('ddlScopePath'); if (sp) sp.textContent = 'Select a DDL from the tree \u2192';
+    updateDDLEditorState(); updateDDLHighlight();
+  } else if (hit(restored)) {
+    selectScope(sc.type, sc.vol, sc.sv, sc.name, sc.defName);
+  }
+  _ddlTreeVersion++;
+  buildTokenMap(); buildUnresolvedRefs(); renderDDLTree();
+  if (typeof _meState !== 'undefined' && _meState && imp.specs) {
+    _meSidebarRefreshIfOpen();
+    const ov = document.getElementById('msgEditorOverlay');
+    if (ov && !ov.classList.contains('hidden')) _meRenderRight();
+  }
+  _meSyncAttention();
+  flash('Import discarded \u2014 everything is as it was last saved');
+}
 
 function confirmImport() {
   if (!_importData) return;
@@ -22754,7 +22822,8 @@ function confirmImport() {
   flash(parts.length
     ? `Imported ${parts.join(' + ')} — not used for parsing until you go to Class Editor and press Save`
     : 'Nothing imported',
-    parts.length ? 'warn' : undefined);
+    parts.length ? 'warn' : undefined,
+    parts.length ? { label: 'Discard import', run: discardImport } : undefined);
 }
 
 // ============================================================
@@ -23269,7 +23338,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.66.0.0';
+const APP_VERSION  = '1.67.0.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -35096,13 +35165,17 @@ function _meOvlRefresh() {
 
 function _meOvlDelete(id) {
   const item = _meCurItem(); if (!item) return;
-  _meOvDelete(item, id);
-  // Through the same funnel every bar action uses. Re-rendering the window from
-  // the CACHED row list left the DE numbers, offsets and lengths at the values
-  // they had while the override existed — so removing an anchor did not put the
-  // natural numbering back until the panel was reopened.
-  _meFmMultiSel.delete(id);
-  _meFmAfterAct();
+  // Undoable like every other removal in the editor: one click took a field's
+  // whole override away with nothing to bring it back. Requested 2026-11-12.
+  _meUndoable(`Removed the override on ${_canonFieldId(id)}`, () => {
+    _meOvDelete(item, id);
+    // Through the same funnel every bar action uses. Re-rendering the window from
+    // the CACHED row list left the DE numbers, offsets and lengths at the values
+    // they had while the override existed — so removing an anchor did not put the
+    // natural numbering back until the panel was reopened.
+    _meFmMultiSel.delete(id);
+    _meFmAfterAct();
+  }, 'warn');
 }
 
 // The row the draft refers to, so the editor can show what the DDL declares and
@@ -37447,6 +37520,10 @@ function _meDeleteItem(section, idx) {
   // detection — and the DDL tree's prompt has always named what it was.
   const kind = s?.kind === 'file' ? 'file detection' : s?.kind === 'other' ? 'structure' : 'message';
   confirmDelete(`the ${kind} "${itemName}" and everything in it`, () => {
+    // The typed DELETE stops an accident; the Undo is for a deliberate delete
+    // that turns out to be the wrong class. The class goes back where it was,
+    // whole. Requested 2026-11-12.
+    const snap = s ? JSON.parse(JSON.stringify(s)) : null;
     _meState.specs.splice(idx, 1);
     // Deleting a class ABOVE the selected one moves the selected one up a slot.
     // Left at its old index, the editor jumped to the next class — and a business
@@ -37464,7 +37541,23 @@ function _meDeleteItem(section, idx) {
     _meSetDirty();
     _meRenderSidebar();
     _meRenderRight();
+    if (snap) _meFlash(`Deleted the ${kind} "${itemName}"`, 'warn', { label: '\u21B6 Undo', run: () => _meUndeleteItem(snap, idx, kind, itemName) });
   });
+}
+function _meUndeleteItem(snap, idx, kind, itemName) {
+  if (!_meState || !Array.isArray(_meState.specs)) return;
+  const at = Math.min(idx, _meState.specs.length);
+  _meState.specs.splice(at, 0, snap);
+  _meState.selIdx      = at;
+  _meState.testResults = null;   // indexes moved again
+  _meState.editRec     = -1;
+  _meState.editRule    = -1;
+  _meState.rulePend    = null;
+  _meState.pend        = {};
+  _meSetDirty();
+  _meRenderSidebar();
+  _meRenderRight();
+  _meFlash(`Undone \u2014 the ${kind} "${itemName}" is back`);
 }
 
 function _meCtxMsg(e, idx) {
@@ -44603,6 +44696,11 @@ function _meSyncAttention() {
   // does not need the room darkened for it. Requested 2026-08-27.
   const meHdr = document.querySelector('#msgEditorOverlay .me-header');
   if (meHdr) meHdr.classList.toggle('attn-dim', (_meImportMarks.size > 0 || impPend) && editorOpen);
+  // Discard sits beside Save in both bars while an import is pending.
+  for (const id of ['impDiscardBtn', 'me-imp-discard-btn']) {
+    const b = document.getElementById(id);
+    if (b && b.style) b.style.display = impPend ? '' : 'none';
+  }
   const save = document.getElementById('me-save-btn');
   if (save) {
     save.classList.toggle('attn-pulse', waiting && editorOpen);
@@ -45485,6 +45583,7 @@ function _meSave() {
       <span class="me-header-actions">
         <span class="me-status" id="me-status"></span>
         <button class="btn btn-danger" id="me-del-btn" onclick="_meDeleteSelected()">Delete</button>
+        <button class="btn" id="me-imp-discard-btn" onclick="discardImport()" style="display:none" title="Take the pending import out — everything goes back to how it was last saved">Discard import</button>
         <button class="btn" onclick="closeMsgEditor()">Cancel</button>
         <button class="btn btn-primary" id="me-save-btn" onclick="_meSave()" disabled>&#x2713; Save</button>
         <button class="btn" onclick="_meCloseEditor()" title="Close">&#x2715;</button>

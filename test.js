@@ -27074,6 +27074,50 @@ console.log('\nreview 2026-11-11 — critical fixes');
     const page = fs.readFileSync('./source.html', 'utf8').replace(/<script src="codemirror\.bundle\.js"><\/script>/, '');
     deepEq(page.match(/\b(?:src|href)="(?![a-z]+:|#|\/\/)[^"]+"/gi) || [], [], 'the page loads nothing beside itself');
   });
+
+  test('[REGRESSION] with an import pending, the parse reads SAVED DE overrides and bound DDLs', () => {
+    // An import puts its DE overrides in S.deOverrides and its DDLs in
+    // S.ddlTree. The parse read the overrides from there, and getDDLFromPath —
+    // which resolves a class's binding — read the live tree, so an unsaved import
+    // changed how a SAVED DDL parsed.
+    const S0 = run('S'), was = { tree: S0.ddlTree, ov: S0.deOverrides };
+    const kv = k => run(`_kvGet('${k}')`);
+    const kvWas = { t: kv('up_ddl_tree'), o: kv('de_overrides') };
+    const setKv = (k, v) => { sandbox.__v = v; run(v == null ? `delete _appKV['${k}']` : `_appKV['${k}'] = __v`); };
+    try {
+      const saved = 'DEF A.\n02 X PIC X(2).\nEND', imported = 'DEF A.\n02 X PIC X(5).\nEND';
+      setKv('up_ddl_tree', JSON.stringify({ V: { S1: { F: saved } } }));
+      setKv('de_overrides', JSON.stringify({}));
+      S0.ddlTree = { V: { S1: { F: imported } } };
+      S0.deOverrides = { 'V/S1/F/A': { '0': 7 } };
+      run('_pendingImport = { ddlCount: 1, ddlPaths: [["V","S1","F"]], treeBefore: {} }');
+      const size = (p = 'V/S1/F') => run('getDDLFromPath')(p).defs.reduce((n, d) => n + (d.length || 0), 0);
+      eq(size(), 5, 'outside a parse the live tree is read (the Class Editor works on the import)');
+      run('_parseTreeBegin()');
+      try {
+        deepEq(run('_deOvRead()'), {}, 'the parse reads the saved overrides, not the pending ones');
+        eq(size(), 2, 'a binding resolves against the saved DDL — and not from the live-tree cache');
+        eq(size('V/S1/F/A'), 2, 'a binding that names the DEF too');
+      } finally { run('_parseTreeEnd()'); }
+      eq(size(), 5, 'and the live result is not served from the parse-time one');
+      deepEq(run('_deOvRead()'), { 'V/S1/F/A': { '0': 7 } }, 'outside a parse the live overrides are read');
+      // A file's overrides are part of what its compiled entry depends on.
+      const h = () => run('_fileHash')('V', 'S1', 'F');
+      const h1 = h();
+      S0.deOverrides = {};
+      assert.notStrictEqual(h(), h1, 'changing a file\'s DE overrides does not invalidate its compiled entry');
+      const h0 = h();
+      S0.deOverrides = { 'V/S1/OTHER/A': { '0': 7 } };
+      eq(h(), h0, 'overrides of ANOTHER file do not touch this one');
+      // Every place that applies DE overrides goes through the accessor.
+      assert.ok(!/applyDEOverrides\([^)]*S\.deOverrides\[/.test(APP_SRC), 'a parse path still applies the live overrides');
+      assert.ok(/const tree = _ddlTreeRead\(\);/.test(psFnSource('getTokenMaps')), 'token maps come from the live tree');
+    } finally {
+      run('_parseTreeEnd()'); run('_pendingImport = null');
+      S0.ddlTree = was.tree; S0.deOverrides = was.ov;
+      setKv('up_ddl_tree', kvWas.t); setKv('de_overrides', kvWas.o);
+    }
+  });
 }
 // ── Summary ───────────────────────────────────────────────────────────────────
 console.log(`\n${'─'.repeat(50)}`);

@@ -9363,12 +9363,13 @@ function parseTokenMap(text) {
 // Gather all token maps from S.ddlTree; preferred volume comes first
 function getTokenMaps(preferredVol) {
   const maps = [];
-  const vols = Object.keys(S.ddlTree).sort((a,b) =>
+  const tree = _ddlTreeRead();   // the saved tree during a parse with an import pending
+  const vols = Object.keys(tree).sort((a,b) =>
     a === preferredVol ? -1 : b === preferredVol ? 1 : 0);
   for (const vol of vols) {
-    for (const sv of Object.keys(S.ddlTree[vol] || {})) {
-      for (const name of Object.keys(S.ddlTree[vol][sv] || {})) {
-        const content = S.ddlTree[vol][sv][name];
+    for (const sv of Object.keys(tree[vol] || {})) {
+      for (const name of Object.keys(tree[vol][sv] || {})) {
+        const content = tree[vol][sv][name];
         if (isTokenMap(content))
           maps.push({ vol, sv, name, path: `${vol}/${sv}/${name}`, map: parseTokenMap(content) });
       }
@@ -12401,7 +12402,15 @@ function _ciKey(obj, key) {
 }
 function _fileHash(vol, sv, file) {
   const content = _ciKey(_ciKey(_ciKey(_ddlTreeRead(), vol), sv), file);
-  return content == null ? '0' : _strHash(String(content));
+  if (content == null) return '0';
+  // A file's DE overrides are applied when it compiles, so they are part of
+  // what the compiled entry depends on: without them, defs compiled under one
+  // set of overrides were reused under another. Only files that HAVE overrides
+  // hash differently, so the cache of every other file stays valid.
+  const pre = `${vol}/${sv}/${file}/`.toUpperCase(), ov = _deOvRead();
+  const mine = Object.keys(ov).filter(k => k.toUpperCase().startsWith(pre)).sort();
+  const extra = mine.length ? '\u0000' + JSON.stringify(mine.map(k => [k, ov[k]])) : '';
+  return _strHash(String(content) + extra);
 }
 // 'VOL/SV/FILE', upper-cased — the cache key and the id used throughout.
 function _fileKey(vol, sv, file) {
@@ -12419,12 +12428,20 @@ function _fileKey(vol, sv, file) {
 // 2026-09-02.
 let _parseTree = null;
 function _ddlTreeRead() { return _parseTree || S.ddlTree; }
+// The DE overrides follow the same rule. An import puts its overrides straight
+// into S.deOverrides, and the parse read them from there — so a pending import
+// that carried overrides for an already-saved DDL changed how that DDL parsed
+// before anyone pressed Save.
+let _parseDeOv = null;
+function _deOvRead() { return _parseDeOv || S.deOverrides; }
 function _parseTreeBegin() {
   _parseTree = null;                       // always reset: a leaked flag self-heals here
+  _parseDeOv = null;
   if (typeof _pendingImport === 'undefined' || !_pendingImport) return;
   try { _parseTree = JSON.parse(_kvGet('up_ddl_tree') || '{}'); } catch(e) { _parseTree = {}; }
+  try { _parseDeOv = JSON.parse(_kvGet('de_overrides') || '{}'); } catch(e) { _parseDeOv = {}; }
 }
-function _parseTreeEnd() { _parseTree = null; }
+function _parseTreeEnd() { _parseTree = null; _parseDeOv = null; }
 
 function getDDLsForSv(vol, sv) {
   const vTree = _ddlTreeRead()[vol];
@@ -12626,7 +12643,7 @@ function _compileDDLTreeThen(useCache, reg, secReg, done) {
     const { vol, sv, path, content, defName } = tasks[ti++];
     const defs = defName ? parseHPEDDL(content, reg, secReg, defName)
                          : parseDDL(content, reg, secReg);
-    if (defName) applyDEOverrides(defs._hpeIsoLayout, S.deOverrides[`${path}/${defName}`.toUpperCase()]);
+    if (defName) applyDEOverrides(defs._hpeIsoLayout, _deOvRead()[`${path}/${defName}`.toUpperCase()]);
     if (defs.length > 1 && !/(?:TKN|TKNX)$/i.test(defName || path.split('/').pop())) {
       const fk = _fileKey(vol, sv, path.split('/').pop());
       (compiledByFile[fk] || (compiledByFile[fk] = [])).push({ path, defName, defs });
@@ -12819,7 +12836,7 @@ async function _restoreCompiledCache() {
             e.defs._hpeIsoLayout.deByBit = new Map(
               (e._hpeIsoLayout.dataElements || []).map(de => [de.bitNum, de])
             );
-            if (e.defName) applyDEOverrides(e.defs._hpeIsoLayout, S.deOverrides[`${e.path}/${e.defName}`.toUpperCase()]);
+            if (e.defName) applyDEOverrides(e.defs._hpeIsoLayout, _deOvRead()[`${e.path}/${e.defName}`.toUpperCase()]);
           }
           return e;
         });
@@ -13699,7 +13716,7 @@ function doParseNetardLog(text, opts = {}) {
         // persisted across page reloads — so re-warming an unchanged DDL after a
         // reload happens silently. If nothing changed, no step at all.
         const _boundHashes = (() => { try { return JSON.parse(_kvGet('up_bound_ddl_hashes') || '{}'); } catch(_) { return {}; } })();
-        const _pathContent = bp => { const [v, s, f] = bp.split('/'); return (S.ddlTree[v] && S.ddlTree[v][s] && S.ddlTree[v][s][f]) || ''; };
+        const _pathContent = bp => { const [v, s, f] = bp.split('/'); const t = _ddlTreeRead(); return (t[v] && t[v][s] && t[v][s][f]) || ''; };
         const _boundToCompile = [];   // { bp, changed, hash } — bindings needing an in-memory compile
         const _seenBound = new Set();
         for (const d of _det) {
@@ -13998,13 +14015,13 @@ function doParseMessages() {
         if (_ovr && _ovr.type === 'def' && _ovr.defName) {
           // Specific DEF selected — compile only that one
           const defs = parseHPEDDL(content, parseTypeReg, parseSecReg, _ovr.defName);
-          applyDEOverrides(defs._hpeIsoLayout, S.deOverrides[`${path}/${_ovr.defName}`.toUpperCase()]);
+          applyDEOverrides(defs._hpeIsoLayout, _deOvRead()[`${path}/${_ovr.defName}`.toUpperCase()]);
           if (defs.length) candidates.push({ path, defs });
         } else {
           // Whole DDL file selected — compile each DEF separately so bestDDLMatch can score them
           for (const defName of parseDEFNames(content)) {
             const defs = parseHPEDDL(content, parseTypeReg, parseSecReg, defName);
-            applyDEOverrides(defs._hpeIsoLayout, S.deOverrides[`${path}/${defName}`.toUpperCase()]);
+            applyDEOverrides(defs._hpeIsoLayout, _deOvRead()[`${path}/${defName}`.toUpperCase()]);
             if (defs.length) candidates.push({ path, defs });
           }
         }
@@ -20553,11 +20570,15 @@ function getDDLFromPath(ddlPath) {
   if (!ddlPath) return null;
   // Validity = version counter + tree object identity (covers wholesale
   // S.ddlTree reassignment, which doesn't bump the version).
+  // The tree and the overrides are the ones the CALLER sees: saved during a parse
+  // with an import pending, live everywhere else. Both are part of the key, so a
+  // result built from one is never handed to a reader of the other.
+  const tree = _ddlTreeRead(), ov = _deOvRead();
   const hit = _getDDLPathCache.get(ddlPath);
-  if (hit && hit.treeV === _ddlTreeVersion && hit.deV === _deOvrVersion && hit.tree === S.ddlTree)
+  if (hit && hit.treeV === _ddlTreeVersion && hit.deV === _deOvrVersion && hit.tree === tree && hit.ov === ov)
     return hit.result;
   const result = _getDDLFromPathUncached(ddlPath);
-  _getDDLPathCache.set(ddlPath, { treeV: _ddlTreeVersion, deV: _deOvrVersion, tree: S.ddlTree, result });
+  _getDDLPathCache.set(ddlPath, { treeV: _ddlTreeVersion, deV: _deOvrVersion, tree, ov, result });
   return result;
 }
 
@@ -20572,24 +20593,24 @@ function _getDDLFromPathUncached(ddlPath) {
   // definition in the file, exploding the Field Map / Auto Order scope.
   if (parts.length === 4) {
     const [vol, sv, name, defName] = parts;
-    const content = S.ddlTree[vol]?.[sv]?.[name];
+    const content = _ddlTreeRead()[vol]?.[sv]?.[name];
     if (content && isHPEDDLText(content)) {
       const defs = parseHPEDDL(content, typeReg, secReg, defName);
-      applyDEOverrides(defs._hpeIsoLayout, S.deOverrides[`${vol}/${sv}/${name}/${defName}`.toUpperCase()]);
+      applyDEOverrides(defs._hpeIsoLayout, _deOvRead()[`${vol}/${sv}/${name}/${defName}`.toUpperCase()]);
       if (defs.length) return { path: `${vol}/${sv}/${name}`, defName, defs };
     }
     return null;
   }
   // 3-part path: VOL/SV/NAME
   const [vol, sv, name] = parts;
-  const content = S.ddlTree[vol]?.[sv]?.[name];
+  const content = _ddlTreeRead()[vol]?.[sv]?.[name];
   if (!content) return null;
   // HPE DDL with a single DEF: compile it with the DEF name so defName is available downstream
   if (isHPEDDLText(content)) {
     const defNames = parseDEFNames(content);
     if (defNames.length === 1) {
       const defs = parseHPEDDL(content, typeReg, secReg, defNames[0]);
-      applyDEOverrides(defs._hpeIsoLayout, S.deOverrides[`${vol}/${sv}/${name}/${defNames[0]}`.toUpperCase()]);
+      applyDEOverrides(defs._hpeIsoLayout, _deOvRead()[`${vol}/${sv}/${name}/${defNames[0]}`.toUpperCase()]);
       if (defs.length) return { path: ddlPath, defName: defNames[0], defs };
     }
   }
@@ -22418,7 +22439,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.64.6.2';
+const APP_VERSION  = '1.64.6.3';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

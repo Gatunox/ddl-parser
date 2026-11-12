@@ -19520,7 +19520,9 @@ test('the row uses the class colour and drops the legacy lookup', () => {
   const src = psFnSource('_auditBuildRowHtml');
   assert.ok(!/MSG_TYPE_MAP/.test(src), 'the legacy colour table is still consulted');
   assert.ok(/_btypeStyle\(badge\.color\)/.test(src), 'the class colour is not used');
-  assert.ok(/_auditBadgeType\(r\.payloadPeek, r\.messageLen, \{ source: r\.source, dest: r\.dest \}\)/.test(src),
+  // Detected through the per-record memo, which passes the length and context.
+  assert.ok(/const badge = _auditRowBadge\(r\);/.test(src), 'the row does not use the badge memo');
+  assert.ok(/_auditBadgeType\(r\.payloadPeek, r\.messageLen, \{ source: r\.source, dest: r\.dest \}\)/.test(psFnSource('_auditRowBadge')),
     'the record length is not passed, so length recognizers cannot be judged');
 });
 
@@ -24231,7 +24233,7 @@ test('the compiled cache is keyed per FILE, and survives a release', () => {
   assert.ok(put, 'cache write not found, or no longer keyed by file');
   assert.ok(/compilerVersion:\s*DDL_COMPILER_VERSION/.test(put[0]),
     'the entry must record the compiler version');
-  assert.ok(/hash:\s*_fileHash\(/.test(put[0]),
+  assert.ok(/\bhash,/.test(put[0]) && /const hash = _fileHash\(vol, sv, file\);/.test(psFnSource('_persistCompiledCache')),
     'the entry must be hashed on the FILE, not the subvolume');
 
   const gate = /if \(stored\.hash !== _fileHash\([\s\S]{0,140}?\)\s*\{/.exec(src);
@@ -27562,6 +27564,184 @@ console.log('\nreview 2026-11-11 — medium and low fixes');
     deepEq(defs.map(d => d.name), ['A', 'B', 'C'], 'three definitions');
     eq(defs[0].content, 'DEF A PIC X(3).', 'A alone');
     eq(defs[1].content, 'DEF B.\n02 F PIC X.\nEND', 'B whole');
+  });
+}
+
+console.log('\nreview 2026-11-11 — performance');
+{
+  const run = c => vm.runInContext(c, sandbox);
+  const withFn = (name, fn, body) => {
+    sandbox.__orig = run(name); sandbox.__repl = fn;
+    run(`${name} = __repl`);
+    try { return body(); } finally { run(`${name} = __orig`); }
+  };
+  // Count calls to a top-level function while body runs, the function still working.
+  const counting = (name, body) => {
+    const orig = run(name); let n = 0;
+    withFn(name, function (...a) { n++; return orig.apply(this, a); }, body);
+    return n;
+  };
+  const withEl = (id, el, body) => {
+    const was = elStubs[id]; elStubs[id] = el;
+    try { return body(); } finally { if (was === undefined) delete elStubs[id]; else elStubs[id] = was; }
+  };
+
+  test('[REGRESSION] OCCURS: a frame\'s sizes are computed once per record, not once per field', () => {
+    // Each of 4000 fields re-walked every def to size its frame: ~300 ms a record.
+    const ddl = 'DEF R.\n02 HDR PIC X(4).\n02 G OCCURS 500 TIMES.\n 03 A PIC X(2).\n 03 B PIC X(2).\nEND';
+    const defs = run('parseHPEDDL')(ddl);
+    const bytes = Buffer.alloc(4 + 2000, 0x41);
+    const cache = {};
+    const n = counting('_occursFrameSizes', () => {
+      for (const d of defs) if (d._occursPath) run('_occursShouldSkip')(d, bytes, cache, defs, x => x.length);
+    });
+    eq(n, 1, 'frame sized per field');
+  });
+
+  test('[REGRESSION] Field Map: expanding a large selection does not rescan every row per row', () => {
+    // find() per selected row, filter() per group and includes() per target:
+    // ~3 s a click at 7000 rows, all selected.
+    const rows = [];
+    for (let g = 0; g < 700; g++) {
+      rows.push({ id: `G${g}`, isGroup: true });
+      for (let l = 0; l < 9; l++) rows.push({ id: `G${g}.L${l}`, isGroup: false });
+    }
+    const st = meState();
+    const sel = run('_meFmMultiSel');
+    try {
+      setMeState({ specs: [{ name: 'A', recognizers: [], field_overrides: {} }], selIdx: 0, sections: {} });
+      sandbox.__rows = rows;
+      run('_meFmVirt = { all: __rows, visible: __rows, ctx: null }');
+      sel.clear(); sel.add('G1'); sel.add('G1.L3'); sel.add('G2.L0');
+      deepEq(run('_meFmActionTargets')('type'),
+        ['G1.L0', 'G1.L1', 'G1.L2', 'G1.L3', 'G1.L4', 'G1.L5', 'G1.L6', 'G1.L7', 'G1.L8', 'G2.L0'],
+        'a group expands to its leaves, in table order, de-duplicated');
+      for (const r of rows) sel.add(r.id);
+      const t0 = Date.now();
+      for (const k of run('_ME_OV_KINDS')) for (let i = 0; i < 3; i++) run('_meFmSelWithKind')(k.id);
+      const ms = Date.now() - t0;
+      assert.ok(ms < 600, `fifteen selection reads took ${ms} ms (was ~2800)`);
+    } finally { sel.clear(); run('_meFmVirt = null'); setMeState(st); }
+  });
+
+  test('[REGRESSION] DDL tree: DEF names are split once per file, and the filter waits for the keys', () => {
+    const st = run('S'), was = st.ddlTree;
+    try {
+      const txt = 'DEF A.\n02 F PIC X.\nEND\nDEF B.\n02 G PIC X.\nEND';
+      const n = counting('parseDEFNames', () => {
+        deepEq(run('_treeDefNames')('V/S/F1', txt), ['A', 'B'], 'the names');
+        run('_treeDefNames')('V/S/F1', txt);
+      });
+      eq(n, 1, 'the same text was split twice');
+      eq(counting('parseDEFNames', () => run('_treeDefNames')('V/S/F1', txt + '\nDEF C PIC X.')), 1, 'an edit is split again');
+      resetTimers();
+      const r = counting('renderDDLTree', () => run('filterDDLTree')('abc'));
+      eq(r, 0, 'a keystroke redrew the tree at once');
+      eq(counting('renderDDLTree', () => pumpTimers()), 1, 'and once after the pause');
+      eq(counting('renderDDLTree', () => run('filterDDLTree')('')), 1, 'clearing lands at once');
+    } finally { st.ddlTree = was; st.treeFilter = ''; resetTimers(); }
+  });
+
+  test('[REGRESSION] Audit: a record\'s badge is detected once, and a scroll within the slice redraws nothing', () => {
+    const r = { payloadPeek: '30313030', messageLen: 4, source: 'S', dest: 'D' };
+    const n = counting('_auditBadgeType', () => { run('_auditRowBadge')(r); run('_auditRowBadge')(r); });
+    eq(n, 1, 'the badge was detected on every redraw');
+    const st = run('S'), ovr = st.specOverride;
+    try {
+      st.specOverride = { label: 'X' };
+      eq(counting('_auditBadgeType', () => run('_auditRowBadge')(r)), 1, 'forcing a class re-detects');
+    } finally { st.specOverride = ovr; }
+    const A = run('_auditSt'), was = A.filtered;
+    try {
+      A.filtered = Array.from({ length: 2000 }, (_, i) => ({ offset: i, recNo: i + 1, payloadPeek: '', messageLen: 0 }));
+      withEl('auditVirtViewport', { style: {} }, () => {
+        const b = counting('_auditBuildRowHtml', () => {
+          run('_auditVirtRenderSlice')(0, true);
+          run('_auditVirtRenderSlice')(3);
+        });
+        assert.ok(b > 0 && b === Math.min(2000, run('AUDIT_VIRT_COUNT') + run('AUDIT_VIRT_OVERSCAN') * 2), `rows built: ${b}`);
+        eq(counting('_auditBuildRowHtml', () => run('_auditVirtRenderSlice')(3, true)) > 0, true, 'force still redraws');
+      });
+    } finally { A.filtered = was; }
+  });
+
+  test('[REGRESSION] the Test input refreshes its format badge after the keys pause', () => {
+    assert.ok(/clearTimeout\(_meTestFmtT\);\s*_meTestFmtT = setTimeout\(_meTestUpdateFmtState, 150\);/.test(APP_SRC), 'each keystroke runs a full detection');
+    assert.ok(/function _meRunTest\(opts\) \{\s*const autoSelect = [^\n]*\n\s*_meTestUpdateFmtState\(\);/.test(APP_SRC), 'Run no longer refreshes it first');
+  });
+
+  test('[REGRESSION] the bindings dropdown draws at most 200 suggestions', () => {
+    const entries = Array.from({ length: 1000 }, (_, i) => ({ defName: 'D' + i, path: 'V/S/F', value: 'V/S/F/D' + i }));
+    const drop = { style: {} };
+    withEl('me-bind-inp-0', { value: '', getBoundingClientRect: () => ({ left: 0, bottom: 0, width: 10 }) }, () =>
+      withEl('me-ddl-drop', drop, () => withFn('_meDDLEntries', () => entries, () => run('_meBindShowDrop')(0))));
+    eq(run('_meDropEntries').length, 200, 'every match was drawn');
+    assert.ok(/800 more/.test(drop.innerHTML), 'the rest are not counted');
+    eq((drop.innerHTML.match(/class="me-ddl-opt"/g) || []).length, 200, 'rows drawn');
+  });
+
+  test('[REGRESSION] the journal filter hides drawn lines instead of rebuilding them', () => {
+    sandbox.__jl = [{ kind: 'h', text: 'Head' }, { kind: 'pass', text: 'alpha' }, { kind: 'pass', text: 'beta' }];
+    run('_journalLines = __jl');
+    const hidden = {};
+    const kids = [0, 1, 2].map(i => ({ dataset: { i: String(i) }, classList: { toggle: (c, v) => { hidden[i] = v; } } }));
+    resetTimers();
+    withEl('journalFilter', { value: 'alp' }, () => withEl('journalBody', { children: kids }, () => {
+      eq(counting('_journalRender', () => { run('journalFilter')(); pumpTimers(); }), 0, 'the filter rebuilt every line');
+    }));
+    deepEq(hidden, { 0: false, 1: false, 2: true }, 'heading kept, match shown, the rest hidden');
+    run('_journalLines = []');
+  });
+
+  test('[REGRESSION] DDL Doc: a call with the editor buffer reuses the cached repository', () => {
+    const st = run('S'), was = st.ddlTree;
+    try {
+      st.ddlTree = { V: { S1: { T: 'DEF T1.\n02 A PIC X(3).\nEND', U: 'DEF T2.\n02 B PIC X(5).\nEND' } } };
+      run('_ddlTreeVersion++');
+      const buf = 'DEF T1.\n02 A PIC X(7).\nEND';
+      run('buildRepoTypeRegistry')(); run('buildRepoSectionRegistry')();
+      const n = counting('parseDDLSections', () => {
+        const reg = run('buildRepoTypeRegistry')(buf);
+        eq(reg.get('T1'), 7, 'the buffer wins');
+        eq(reg.get('T2'), 5, 'the repository is there');
+        const sec = run('buildRepoSectionRegistry')(buf);
+        eq(sec.get('T1')[0].pic, 'X(7)', 'the buffer wins for items too');
+      });
+      eq(n, 2, 'the repository was parsed again (only the buffer should be, once per registry)');
+      st.ddlTree = { V: { S1: { T: 'DEF T9.\n02 A PIC X(1).\nEND' } } };
+      eq(run('buildRepoTypeRegistry')().has('T9'), true, 'a tree replaced without a version bump is not served stale');
+    } finally { st.ddlTree = was; run('_ddlTreeVersion++'); }
+    assert.ok(/const collapsedQns = collapsed \? null : new Set\(/.test(APP_SRC), 'expanding a group queries the collapsed groups per row again');
+  });
+
+  test('[REGRESSION] the compiled cache writes only the files that changed', () => {
+    const puts = [];
+    let lastTx = null;
+    const store = { put: o => puts.push(o.fk), delete: () => {} };
+    sandbox.__db = { transaction: () => (lastTx = { objectStore: () => store }) };
+    const st = run('S'), was = st.ddlTree;
+    const dbWas = run('_compiledCacheDB');
+    try {
+      st.ddlTree = { V: { S1: { F1: 'DEF A.\n02 X PIC X.\nEND', F2: 'DEF B.\n02 Y PIC X.\nEND' } } };
+      run('_ddlTreeVersion++');
+      run('_compiledCacheDB = __db');
+      run('_compiledPersisted').clear();
+      const compiled = { 'V/S1/F1': [{ path: 'V/S1/F1', defName: 'A', defs: [] }], 'V/S1/F2': [{ path: 'V/S1/F2', defName: 'B', defs: [] }] };
+      run('_persistCompiledCache')(compiled);
+      eq(puts.length, 2, 'first commit writes both');
+      lastTx.oncomplete();
+      puts.length = 0;
+      run('_persistCompiledCache')(compiled);
+      eq(puts.length, 0, 'an unchanged commit rewrote the store');
+      st.ddlTree.V.S1.F2 = 'DEF B.\n02 Y PIC X(2).\nEND';
+      run('_ddlTreeVersion++');
+      run('_persistCompiledCache')(compiled);
+      deepEq(puts, ['V/S1/F2'], 'only the edited file');
+    } finally {
+      sandbox.__dbw = dbWas; run('_compiledCacheDB = __dbw');
+      run('_compiledPersisted').clear();
+      st.ddlTree = was; run('_ddlTreeVersion++');
+    }
   });
 }
 // ── Summary ───────────────────────────────────────────────────────────────────

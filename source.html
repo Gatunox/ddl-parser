@@ -4058,6 +4058,7 @@ tbody tr:hover .me-ps-form-tbl td,
 .me-ddl-opt:hover .me-ddl-opt-name,.me-ddl-opt.me-ddl-focused .me-ddl-opt-name{color:var(--accent);}
 .me-ddl-opt-name{font-family:var(--mono);font-size:var(--sz-mono);color:var(--text);white-space:nowrap;flex-shrink:0;}
 .me-ddl-opt-path{font-family:var(--mono);font-size:calc(var(--sz-mono) - 2px);color:var(--text-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.me-ddl-opt-more{padding:4px 8px;font-size:calc(var(--sz-mono) - 2px);color:var(--text-dim);font-style:italic;cursor:default;}
 .me-ddl-empty{font-family:var(--mono);font-size:var(--sz-mono);padding:6px 10px;color:var(--text-dim);}
 .me-ov-section{margin-bottom:14px;}
 .me-ov-section:last-child{margin-bottom:0;}
@@ -7307,7 +7308,11 @@ function buildDDLDocFields(rawItems, typeRegistry) {
 // Returns Map<string, number> — key is defName.toUpperCase(), value is total byte size.
 function buildRepoTypeRegistry(extraContent) {
   const _tv = _ddlTreeVersion + (_parseTree ? ':saved' : '');
-  if (!extraContent && _repoTypeRegCache.version === _tv) return _repoTypeRegCache.reg;
+  // Keyed on the tree OBJECT too: a tree replaced wholesale without a version
+  // bump must not be answered from the old one — the cache now also serves
+  // every call that carries an editor buffer.
+  const _tObj = _ddlTreeRead();
+  if (!extraContent && _repoTypeRegCache.version === _tv && _repoTypeRegCache.tree === _tObj) return _repoTypeRegCache.reg;
   const reg = new Map();
 
   function ingest(text) {
@@ -7326,7 +7331,17 @@ function buildRepoTypeRegistry(extraContent) {
   // sized entry. Read last, the saved copy of a DEF beat the unsaved edit — grow
   // DEF A and a REDEFINES of a TYPE A field in one go, and Save was refused with a
   // size mismatch measured against the OLD A.
-  if (extraContent) ingest(extraContent);
+  //
+  // The repository part is the CACHED registry, laid under the buffer by the
+  // same rule ingest applies (a 0 size yields to a real one): rescanning every
+  // file for each call with a buffer recompiled the whole tree on every DDL Doc
+  // open and every validation.
+  if (extraContent) {
+    ingest(extraContent);
+    for (const [k, v] of buildRepoTypeRegistry())
+      if (!reg.has(k) || reg.get(k) === 0) reg.set(k, v);
+    return reg;
+  }
 
   // Scan every DDL in the repository
   const _t = _ddlTreeRead();
@@ -7338,7 +7353,7 @@ function buildRepoTypeRegistry(extraContent) {
     }
   }
 
-  if (!extraContent) _repoTypeRegCache = { version: _tv, reg };
+  if (!extraContent) _repoTypeRegCache = { version: _tv, tree: _tObj, reg };
   return reg;
 }
 
@@ -7348,7 +7363,11 @@ function buildRepoTypeRegistry(extraContent) {
 // Returns Map<string, items[]> — key is defName.toUpperCase(), value is the raw item list.
 function buildRepoSectionRegistry(extraContent) {
   const _tv = _ddlTreeVersion + (_parseTree ? ':saved' : '');
-  if (!extraContent && _repoSecRegCache.version === _tv) return _repoSecRegCache.reg;
+  // Keyed on the tree OBJECT too: a tree replaced wholesale without a version
+  // bump must not be answered from the old one — the cache now also serves
+  // every call that carries an editor buffer.
+  const _tObj = _ddlTreeRead();
+  if (!extraContent && _repoSecRegCache.version === _tv && _repoSecRegCache.tree === _tObj) return _repoSecRegCache.reg;
   const reg = new Map();
 
   function ingest(text) {
@@ -7360,7 +7379,12 @@ function buildRepoSectionRegistry(extraContent) {
   }
 
   // Editor buffer first, for the same reason as the type registry: first wins.
-  if (extraContent) ingest(extraContent);
+  // The repository part comes from the cache, as in the type registry.
+  if (extraContent) {
+    ingest(extraContent);
+    for (const [k, v] of buildRepoSectionRegistry()) if (!reg.has(k)) reg.set(k, v);
+    return reg;
+  }
   const _t = _ddlTreeRead();
   for (const vol of Object.keys(_t)) {
     for (const sv of Object.keys(_t[vol] || {})) {
@@ -7370,7 +7394,7 @@ function buildRepoSectionRegistry(extraContent) {
     }
   }
 
-  if (!extraContent) _repoSecRegCache = { version: _tv, reg };
+  if (!extraContent) _repoSecRegCache = { version: _tv, tree: _tObj, reg };
   return reg;
 }
 
@@ -7561,15 +7585,21 @@ function toggleDDLGroup(tr) {
   const tbl = tr.closest('table');
   const collapsed = tr.classList.toggle('ddl-grp-collapsed');
   const prefix = grpQn + '.';
+  const collapsedQns = collapsed ? null : new Set(
+    Array.from(tbl.querySelectorAll('tr.ddl-grp-collapsed[data-grp]'), r => r.getAttribute('data-qn')));
   for (const row of tbl.querySelectorAll('tr[data-qn]')) {
     const qn = row.getAttribute('data-qn');
     if (!qn.startsWith(prefix)) continue;
     if (collapsed) {
       row.classList.add('ddl-grp-hidden');
     } else {
-      const hiddenByAncestor = Array.from(
-        tbl.querySelectorAll('tr.ddl-grp-collapsed[data-grp]')
-      ).some(r => qn.startsWith(r.getAttribute('data-qn') + '.'));
+      // A row stays hidden while any group above it is still collapsed. Its
+      // ancestors are the prefixes of its own name, looked up in a set built
+      // once — querying every collapsed group per row froze the page when
+      // expanding one group after Collapse All.
+      let hiddenByAncestor = false;
+      for (let i = qn.indexOf('.'); i > 0 && !hiddenByAncestor; i = qn.indexOf('.', i + 1))
+        hiddenByAncestor = collapsedQns.has(qn.slice(0, i));
       if (!hiddenByAncestor) row.classList.remove('ddl-grp-hidden');
     }
   }
@@ -8043,7 +8073,26 @@ function _journalRender(focusFid) {
   }).join('');
   if (focusFid != null) body.querySelector('.jl-focus')?.scrollIntoView({ block: 'center' });
 }
-function journalFilter() { _journalRender(); }
+// Filtering hides lines that are already drawn instead of rebuilding them, and
+// waits for the keys to pause: a journal for a large message runs to tens of
+// thousands of lines, and re-escaping all of them per keystroke lagged.
+let _journalFilterT = null;
+function journalFilter() {
+  clearTimeout(_journalFilterT);
+  _journalFilterT = setTimeout(_journalApplyFilter, 120);
+}
+function _journalApplyFilter() {
+  _journalFilterT = null;
+  const body = document.getElementById('journalBody');
+  if (!body) return;
+  const q = (document.getElementById('journalFilter')?.value || '').toLowerCase();
+  for (const el of body.children) {
+    const l = _journalLines[+el.dataset.i];
+    if (!l) continue;
+    const hit = !q || l.kind === 'h' || l.text.toLowerCase().includes(q);
+    el.classList.toggle('hidden', !hit);
+  }
+}
 function closeJournal() { document.getElementById('journalOverlay')?.classList.add('hidden'); }
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape' && !document.getElementById('journalOverlay')?.classList.contains('hidden')) closeJournal();
@@ -9182,7 +9231,11 @@ function _occursShouldSkip(def, bytes, cache, defs, effLen) {
   if (!path || !path.length) return false;
   let outerDelta = 0, keyPrefix = '';
   for (const fr of path) {
-    const sz = _occursFrameSizes(fr, defs, effLen);
+    // A frame's sizes walk every def, and they are the same for every field of
+    // the array — computed once per frame per record, not once per field. At
+    // 4000 defs that walk per field was ~300 ms a record.
+    const szKey = `\u0001sz|${fr.group}@${fr.groupOffset}`;
+    const sz = cache[szKey] || (cache[szKey] = _occursFrameSizes(fr, defs, effLen));
     const start0 = sz.groupOffset + outerDelta;  // byte start of occurrence 0 in this context
     const key = `${keyPrefix}|${fr.group}`;
     let count = cache[key];
@@ -11130,6 +11183,8 @@ function parseMessage(bytes, defs, rawBytes) {
     const raw = _fmtGetSaved();
     const specs = raw.specs || [];
     _fmtSpecs = _detectOrderIdxs(specs).map(i => _compileSpec(specs[i]));
+    // Anything that remembers a detection result keys it on this.
+    window._fmtSpecsGen = (window._fmtSpecsGen || 0) + 1;
   }
 
   // Returns false when nothing was written (storage full or blocked). It used to
@@ -12800,25 +12855,39 @@ function _scorePoolByType(items, compiledByVol, ddlErrors) {
   return cache;
 }
 
+// What the store already holds, file key -> content hash: the files served from
+// it at start-up, plus every write that completed. A commit writes only the
+// files that differ — it used to put EVERY compiled file back on each parse,
+// thousands of definitions re-serialised to change one.
+const _compiledPersisted = new Map();
 function _persistCompiledCache(compiledByFile) {
   if (!_compiledCacheDB) return;
   // Drop entries whose file no longer hashes the same — they were recompiled.
-  if (_cacheRestoreStats.missFiles?.length) {
+  // Once: a key written since then is current and needs no delete.
+  const stale = (_cacheRestoreStats.missFiles || []).filter(fk => !_compiledPersisted.has(fk));
+  if (stale.length) {
     const dtx = _compiledCacheDB.transaction('compiled', 'readwrite');
-    for (const fk of _cacheRestoreStats.missFiles) dtx.objectStore('compiled').delete(fk);
+    for (const fk of stale) dtx.objectStore('compiled').delete(fk);
   }
-  const tx = _compiledCacheDB.transaction('compiled', 'readwrite');
-  const store = tx.objectStore('compiled');
+  const todo = [];
   for (const [fk, entries] of Object.entries(compiledByFile)) {
     const [vol, sv, file] = fk.split('/');
+    const hash = _fileHash(vol, sv, file);
+    if (_compiledPersisted.get(fk) !== hash) todo.push([fk, entries, hash]);
+  }
+  if (!todo.length) return;
+  const tx = _compiledCacheDB.transaction('compiled', 'readwrite');
+  const store = tx.objectStore('compiled');
+  for (const [fk, entries, hash] of todo) {
     const data = entries.map(e => {
       const iso = e.defs._hpeIsoLayout;
       return iso ? { ...e, _hpeIsoLayout: { ...iso, deByBit: undefined } } : e;
     });
     // appVersion is recorded for diagnostics only — compilerVersion is the gate.
-    store.put({ fk, hash: _fileHash(vol, sv, file),
+    store.put({ fk, hash,
                 compilerVersion: DDL_COMPILER_VERSION, appVersion: APP_VERSION, data });
   }
+  tx.oncomplete = () => { for (const [fk, , hash] of todo) _compiledPersisted.set(fk, hash); };
   tx.onerror = e => {
     console.warn('[DDL cache] IDB write error', e.target?.error);
     setTimeout(() => flash('Cache save failed — will recompile on next reload.', 'warn'), 500);
@@ -12862,6 +12931,7 @@ async function _restoreCompiledCache() {
           continue;
         }
         _cacheRestoreStats.hit++; _cacheRestoreStats.hitFiles.push(fk);
+        _compiledPersisted.set(fk, stored.hash);
         byFile[fk] = stored.data.map(e => {
           if (e._hpeIsoLayout) {
             // Re-attach layout to the defs array and rebuild the Map that can't survive JSON.
@@ -15383,8 +15453,9 @@ function renderCurrent() {
           const rowTop = fi * rowH;
           if (rowTop < listEl.scrollTop || rowTop + rowH > listEl.scrollTop + listEl.clientHeight)
             listEl.scrollTop = Math.max(0, rowTop - listEl.clientHeight / 2 + rowH / 2);
-          else
-            _auditVirtRenderSlice(listEl.scrollTop);
+          // Forced: the selection moved, so the slice is redrawn even when the
+          // rows on screen are the same ones.
+          _auditVirtRenderSlice(listEl.scrollTop, true);
         }
         requestAnimationFrame(() => document.getElementById('aud-row-' + fi)?.classList.add('aud-sel'));
       }
@@ -17798,6 +17869,19 @@ function auditApplyFilter() {
   _auditRenderList();
 }
 
+// A record's badge, detected once and remembered until the classes are
+// recompiled or a class is forced. Every scroll redraws ~340 rows, and each
+// used to run the full detection again.
+let _auditBadgeMemo = new WeakMap();
+function _auditRowBadge(r) {
+  const key = (window._fmtSpecsGen || 0) + '|' + (S.specOverride?.label || '');
+  const m = _auditBadgeMemo.get(r);
+  if (m && m.key === key) return m.badge;
+  const badge = _auditBadgeType(r.payloadPeek, r.messageLen, { source: r.source, dest: r.dest });
+  _auditBadgeMemo.set(r, { key, badge });
+  return badge;
+}
+
 function _auditBuildRowHtml(r, absIdx) {
   const peek  = _auditDecodePeek(r.payloadPeek);
   // Detected the way the parse detects: on the RAW bytes, with the record's
@@ -17805,7 +17889,7 @@ function _auditBuildRowHtml(r, absIdx) {
   // a class with an EBCDIC recognizer could never match it, and with no context
   // a Source/Destination recognizer always refused, so the badge disagreed with
   // the class the parse then reported.
-  const badge = _auditBadgeType(r.payloadPeek, r.messageLen, { source: r.source, dest: r.dest });
+  const badge = _auditRowBadge(r);
   // Colour comes from the class itself, not from a lookup keyed on the type
   // name — that lookup only had entries for the five legacy names, so a renamed
   // class got no colour of its own.
@@ -17873,10 +17957,13 @@ function _auditRenderList() {
 
   spacer.style.height = totalH + 'px';
   el.scrollTop = 0;
-  _auditVirtRenderSlice(0);
+  _auditVirtRenderSlice(0, true);
 }
 
-function _auditVirtRenderSlice(scrollTop) {
+// The slice on screen, so a scroll that has not moved it by a whole row does not
+// rebuild it. `force` redraws anyway (new filter, a row mark, a resize).
+let _auditVirtShown = null;
+function _auditVirtRenderSlice(scrollTop, force) {
   const rows     = _auditSt.filtered;
   const viewport = document.getElementById('auditVirtViewport');
   if (!viewport || !rows.length) return;
@@ -17884,6 +17971,9 @@ function _auditVirtRenderSlice(scrollTop) {
   const rowH     = _auditCurRowH;
   const startIdx = Math.max(0, Math.floor(scrollTop / rowH) - AUDIT_VIRT_OVERSCAN);
   const endIdx   = Math.min(rows.length, startIdx + AUDIT_VIRT_COUNT + AUDIT_VIRT_OVERSCAN * 2);
+  const shown    = `${startIdx}|${endIdx}|${rowH}`;
+  if (!force && _auditVirtShown && _auditVirtShown.key === shown && _auditVirtShown.rows === rows) return;
+  _auditVirtShown = { key: shown, rows };
 
   let html = '';
   for (let i = startIdx; i < endIdx; i++) html += _auditBuildRowHtml(rows[i], i);
@@ -17891,9 +17981,15 @@ function _auditVirtRenderSlice(scrollTop) {
   viewport.innerHTML = html;
 }
 
+// One redraw per frame at most: a fling fires many scroll events per frame.
+let _auditScrollRaf = 0;
 function _auditOnVirtScroll() {
-  const el = document.getElementById('auditRecordList');
-  if (el) _auditVirtRenderSlice(el.scrollTop);
+  if (_auditScrollRaf) return;
+  _auditScrollRaf = requestAnimationFrame(() => {
+    _auditScrollRaf = 0;
+    const el = document.getElementById('auditRecordList');
+    if (el) _auditVirtRenderSlice(el.scrollTop);
+  });
 }
 
 function _auditPrecomputeRowHeights() {
@@ -19603,11 +19699,30 @@ function getDDLsForScope(scope) {
   return results;
 }
 
-function filterDDLTree(val) {
+// A file's DEF names, as the tree lists and filters them, remembered per file
+// until its text changes. The tree used to re-detect and re-split every file on
+// each render — each keystroke of the filter, each toggle — which at production
+// size (thousands of definitions, a slow machine) made typing in the filter lag.
+const _treeDefNamesMemo = new Map();   // fileKey -> { c, names }
+function _treeDefNames(fileKey, content) {
+  const c = content || '';
+  const m = _treeDefNamesMemo.get(fileKey);
+  if (m && m.c === c) return m.names;
+  const names = isHPEDDLText(c) ? parseDEFNames(c) : [];
+  _treeDefNamesMemo.set(fileKey, { c, names });
+  return names;
+}
+
+// Typing in the filter redraws the tree once the keys pause, not on every key.
+// Clearing (Esc, ✕) passes `now` and lands at once.
+let _treeFilterT = null;
+function filterDDLTree(val, now) {
   S.treeFilter = (val || '').trim();
   const clr = document.getElementById('treeSearchClear');
   if (clr) clr.classList.toggle('visible', S.treeFilter.length > 0);
-  renderDDLTree();
+  clearTimeout(_treeFilterT);
+  if (now || !S.treeFilter) { _treeFilterT = null; renderDDLTree(); return; }
+  _treeFilterT = setTimeout(() => { _treeFilterT = null; renderDDLTree(); }, 150);
 }
 
 // Total DDLs across every volume/subvolume. Derived at render time rather than
@@ -19671,8 +19786,8 @@ function renderDDLTree() {
           } else {
             // Match on any DEF name inside the file
             const content = tree[vol][sv][d] || '';
-            if (isHPEDDLText(content)) {
-              for (const defName of parseDEFNames(content)) {
+            {
+              for (const defName of _treeDefNames(fileKey, content)) {
                 if (defName.toLowerCase().includes(fq)) {
                   matchVols.add(vol); matchSvs.add(`${vol}/${sv}`); matchFiles.add(fileKey);
                   break;
@@ -19743,7 +19858,7 @@ function renderDDLTree() {
             // A filename node is "selected" if scope is type='ddl' pointing to it,
             // OR type='def' pointing to a DEF inside it (ancestor style).
             const fileContent  = !isPending ? (S.ddlTree[vol]?.[sv]?.[d] || '') : '';
-            const fileDefNames = !isPending && isHPEDDLText(fileContent) ? parseDEFNames(fileContent) : [];
+            const fileDefNames = !isPending ? _treeDefNames(fileKey, fileContent) : [];
             // All HPE DDL files act as collapsible folders — DEF sub-nodes always rendered.
             const showDefSubNodes = fileDefNames.length >= 1;
             const singleDefFile   = fileDefNames.length === 1;
@@ -22607,7 +22722,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.64.8.0';
+const APP_VERSION  = '1.64.9.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -22970,7 +23085,7 @@ function applyPrefs(updateUI = true) {
       const spacer = document.getElementById('auditVirtSpacer');
       if (spacer) spacer.style.height = (_auditSt.filtered.length * _auditCurRowH) + 'px';
       const el = document.getElementById('auditRecordList');
-      if (el) _auditVirtRenderSlice(el.scrollTop);
+      if (el) _auditVirtRenderSlice(el.scrollTop, true);
     }
   }
   requestAnimationFrame(_auditSyncToggleWidth);
@@ -24289,7 +24404,14 @@ document.addEventListener('DOMContentLoaded', () => {
           // longest line is 18 characters and no width can overflow it.
           placeholder('Paste one message here, or drop a file.\n\nAccepted:\n  NETARD audit log\n  Pure hex\n  Hex with spaces\n  Tandem hex dump\n  ASCII raw bytes'),
           _meTestHLField,
-          EditorView.updateListener.of(u => { if (u.docChanged) _meTestUpdateFmtState(); }),
+          // After the keys pause, not on every key: each call detects the format
+          // and extracts every byte of the whole text, which lags on a large log.
+          // Run refreshes it first, so nothing reads a stale state.
+          EditorView.updateListener.of(u => {
+            if (!u.docChanged) return;
+            clearTimeout(_meTestFmtT);
+            _meTestFmtT = setTimeout(_meTestUpdateFmtState, 150);
+          }),
         ],
       }),
       parent: document.getElementById('me-test-input'),
@@ -30601,6 +30723,7 @@ const _meBindEntryMatch = (e, q) =>
   !q || e.value.toLowerCase().includes(q) || e.defName.toLowerCase().includes(q);
 
 let _meDropEntries = [], _meDropBindIdx = -1, _meDropFocusIdx = -1;
+const _ME_DROP_MAX = 200;
 
 function _meBindInput(idx, val) {
   _meBindSet(idx, val);
@@ -30637,7 +30760,15 @@ function _meBindShowDrop(idx) {
   _meDropFocusIdx  = -1;
   const entries = _meDDLEntries();
   const q = inp.value.toLowerCase();
-  _meDropEntries = entries.filter(e => _meBindEntryMatch(e, q));
+  // At most _ME_DROP_MAX rows are drawn — at production size an empty field
+  // matches thousands of definitions, and building every one on each keystroke
+  // lagged. The rest are counted, and typing narrows to them.
+  let more = 0;
+  _meDropEntries = [];
+  for (const e of entries) {
+    if (!_meBindEntryMatch(e, q)) continue;
+    if (_meDropEntries.length < _ME_DROP_MAX) _meDropEntries.push(e); else more++;
+  }
   // No matches → hide the dropdown entirely (the red validation badge already
   // signals "this path doesn't resolve"; the empty list is noise).
   if (!_meDropEntries.length) {
@@ -30648,7 +30779,8 @@ function _meBindShowDrop(idx) {
     `<div class="me-ddl-opt" id="me-ddl-opt-${i}" onmousedown="event.preventDefault();_meBindPickIdx(${i})">` +
     `<span class="me-ddl-opt-name">${_escHtml(e.defName)}</span>` +
     `<span class="me-ddl-opt-path">${_escHtml(e.path)}</span></div>`
-  ).join('');
+  ).join('')
+    + (more ? `<div class="me-ddl-opt-more">${more.toLocaleString()} more — keep typing to narrow</div>` : '');
   const r = inp.getBoundingClientRect();
   drop.style.left  = r.left + 'px';
   drop.style.top   = (r.bottom + 2) + 'px';
@@ -33935,19 +34067,41 @@ function _meFmAfterAct() {
 //                              and what it sizes is whatever follows
 //   de-*                    -> the group itself, which is where DE numbering
 //                              genuinely lives (exclude / include / children)
-function _meFmExpandTargets(qn, act) {
+// Row lookup by id and each group's leaves, built once per row list. Expanding a
+// selection used to find() its row and filter() every row for each group — at
+// 7000 rows, every one selected, a click cost seconds. A leaf "A.B.C" belongs to
+// exactly the groups "A" and "A.B": the ids its own id starts with plus a dot.
+function _meFmRowIndex() {
   const rows = _meFmVirt?.all || [];
-  const row  = rows.find(r => r.id === qn);
+  if (_meFmVirt && _meFmVirt._ix && _meFmVirt._ix.rows === rows && _meFmVirt._ix.n === rows.length) return _meFmVirt._ix;
+  const byId = new Map(), leavesOf = new Map();
+  for (const r of rows) {
+    byId.set(r.id, r);
+    if (r.isGroup) continue;
+    for (let i = r.id.indexOf('.'); i > 0; i = r.id.indexOf('.', i + 1)) {
+      const g = r.id.slice(0, i);
+      let l = leavesOf.get(g);
+      if (!l) leavesOf.set(g, l = []);
+      l.push(r);
+    }
+  }
+  const ix = { rows, n: rows.length, byId, leavesOf };
+  if (_meFmVirt) _meFmVirt._ix = ix;
+  return ix;
+}
+
+function _meFmExpandTargets(qn, act) {
+  const ix  = _meFmRowIndex();
+  const row = ix.byId.get(qn);
   if (!row || !row.isGroup) return [qn];
   if (String(act).startsWith('de-')) return [qn];
-  const pre = qn + '.';
   // REDEFINES leaves are INCLUDED for the value kinds. A redefinition is another
   // reading of the same bytes, so setting a type on a group has to reach it too —
   // otherwise the group's own leaves showed as hex-char while the redefinition
   // beside them was still read the DDL's way, and the two disagreed about the
   // very same bytes. Each can still be overridden on its own afterwards, exactly
   // as a DDL gives a redefinition its own name and type. Reported 2026-08-19.
-  const leaves = rows.filter(r => !r.isGroup && r.id.startsWith(pre));
+  const leaves = ix.leavesOf.get(qn) || [];
   if (!leaves.length) return [qn];
   // A LENGTH is the one exception: it marks the field that SIZES the payload, and
   // a redefinition sizes nothing — it overlays what the length already framed.
@@ -33983,10 +34137,10 @@ function _meFmExpandTargets(qn, act) {
 const _meFmXAct = act => (_ME_OV_KINDS.find(k => k.act === act) || {}).xact || act;
 function _meFmActionTargets(act) {
   const x = _meFmXAct(act);
-  const out = [];
+  const out = new Set();
   for (const qn of _meFmMultiSel)
-    for (const t of _meFmExpandTargets(qn, x)) if (!out.includes(t)) out.push(t);
-  return out;
+    for (const t of _meFmExpandTargets(qn, x)) out.add(t);
+  return [...out];
 }
 
 // Every kind opens its editor. The three DE states used to be three buttons
@@ -43271,7 +43425,10 @@ function _meTestFmtChange() {
 }
 // Badges mirror the main panel's rule: shown in AUTO only, because a forced
 // format is already spelled out in the select next to them.
+// var, not let: this runs from start-up code that executes before this line.
+var _meTestFmtT = null;
 function _meTestUpdateFmtState() {
+  clearTimeout(_meTestFmtT); _meTestFmtT = null;
   const sel  = document.getElementById('me-test-fmt');
   const bEl  = document.getElementById('me-test-fmt-badge');
   const cEl  = document.getElementById('me-test-cnt-badge');

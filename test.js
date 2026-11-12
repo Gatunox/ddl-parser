@@ -11193,7 +11193,7 @@ test('the DDL Doc has a title row, and its filter sits over the column it filter
   // buttons — the shape Parse Results has, which is what leaves room for the
   // filter to line up with a column instead of being crowded beside the title.
   const hdr = html.slice(html.indexOf('<div class="ddl-doc-hdr">'), html.indexOf('id="ddlDocBody"'));
-  assert.ok(/<span id="ddlDocTitle"[^>]*><\/span>\s*\n\s*<span class="cp-ico" data-cp="ddlDoc"[^>]*>⧉<\/span>\s*\n\s*<button class="btn" onclick="closeDDLDoc\(\)"/.test(hdr),
+  assert.ok(/<span id="ddlDocTitle"[^>]*><\/span>\s*\n\s*<span class="cp-ico cp-empty" data-cp="ddlDoc"[^>]*>⧉<\/span>\s*\n\s*<button class="btn" onclick="closeDDLDoc\(\)"/.test(hdr),
     'the title row does not hold the title alone');
   assert.ok(/<div class="ddl-doc-ctl" id="ddlDocControls">[\s\S]*?ddlDocFilterInput/.test(hdr),
     'the filter is not on the controls row');
@@ -27977,6 +27977,21 @@ console.log('\nCopy — one icon in every title, one on the hovered row');
     assert.ok(/\.cp-ico\.cp-empty \{ display: none !important; \}/.test(html), 'cp-empty loses to the panel header rule');
     // The headers spread their items; the icon has to claim the space after it.
     assert.ok(/\.panel-header > \.cp-ico \{ margin-right: auto; \}/.test(html), 'the icon floats away from its title');
+  });
+
+  test('[REGRESSION] no copy icon shows, even for a moment, before its panel is checked', () => {
+    // They started visible and the first check waited for the mouse: on a
+    // reload every main panel flashed an icon it had nothing to copy for.
+    const icons = [...html.matchAll(/<span class="(cp-ico[^"]*)" data-cp=/g)].map(m => m[1]);
+    assert.ok(icons.length > 10, 'the icons were not found');
+    for (const c of icons) eq(c, 'cp-ico cp-empty', 'an icon starts visible');
+    const drawn = run('_cpIco')('res');
+    assert.ok(/^<span class="cp-ico cp-empty" data-cp="res"/.test(drawn), 'a drawn icon starts visible: ' + drawn.slice(0, 60));
+    assert.ok(/_cpSyncSoon\(\);\s*return `<span class="cp-ico cp-empty"/.test(psFnSource('_cpIco')), 'a drawn icon is not checked');
+    assert.ok(/window\.addEventListener\('DOMContentLoaded', _cpSync\);/.test(APP_SRC)
+           && /window\.addEventListener\('load', _cpSync\);/.test(APP_SRC), 'nothing checks at load');
+    for (const fn of ['renderDDLTree', 'renderFieldTable', 'renderRaw'])
+      assert.ok(/^\s*function \w+\([^)]*\) \{\s*_cpSyncSoon\(\);/.test(psFnSource(fn)), `${fn} fills a panel unchecked`);
   });
 
   test('[REGRESSION] a row shows the copy icon after a pause, and copies that row alone', () => {

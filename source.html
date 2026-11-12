@@ -4552,7 +4552,7 @@ th.me-fm-colhi{color:var(--accent);}
         <div class="ddl-tree-pane pb-read" id="ddlTreePane">
           <div class="tree-hdr">
             <span class="tree-hdr-title">DDL Tree</span>
-            <span class="cp-ico" data-cp="tree" onclick="event.stopPropagation();_cpCopy('tree', this)" ondblclick="event.stopPropagation()" onmouseenter="_tipShow(this,'Copy to clipboard')" onmouseleave="_tipHide()">⧉</span>
+            <span class="cp-ico cp-empty" data-cp="tree" onclick="event.stopPropagation();_cpCopy('tree', this)" ondblclick="event.stopPropagation()" onmouseenter="_tipShow(this,'Copy to clipboard')" onmouseleave="_tipHide()">⧉</span>
             <button class="tree-hdr-exp" id="treeExpandAllBtn" onclick="toggleTreeExpandAll()" title="Expand all">+</button>
             <span class="tree-hdr-count" id="ddlTreeCount">0</span>
             <button class="tree-hdr-collapse" id="treePaneToggle" onclick="toggleTreePane()" title="Hide the tree">−</button>
@@ -4572,7 +4572,7 @@ th.me-fm-colhi{color:var(--accent);}
         <div class="ddl-editor-pane pb-edit">
           <div id="ddlCfgBar">
             <span class="panel-title ddl-cfg-title">DDL Definition</span>
-            <span class="cp-ico" data-cp="ddl" onclick="event.stopPropagation();_cpCopy('ddl', this)" ondblclick="event.stopPropagation()" onmouseenter="_tipShow(this,'Copy to clipboard')" onmouseleave="_tipHide()">⧉</span>
+            <span class="cp-ico cp-empty" data-cp="ddl" onclick="event.stopPropagation();_cpCopy('ddl', this)" ondblclick="event.stopPropagation()" onmouseenter="_tipShow(this,'Copy to clipboard')" onmouseleave="_tipHide()">⧉</span>
             <!-- The search used to live HERE, flex:1 between the title and the
                  buttons. Its field and its navigation controls were competing
                  for one bar's width: the controls are 80-110px depending on the
@@ -4625,7 +4625,7 @@ th.me-fm-colhi{color:var(--accent);}
     <div class="panel" id="msgPanel">
       <div class="panel-header">
         <span class="panel-title">Data Input</span>
-        <span class="cp-ico" data-cp="input" onclick="event.stopPropagation();_cpCopy('input', this)" ondblclick="event.stopPropagation()" onmouseenter="_tipShow(this,'Copy to clipboard')" onmouseleave="_tipHide()">⧉</span>
+        <span class="cp-ico cp-empty" data-cp="input" onclick="event.stopPropagation();_cpCopy('input', this)" ondblclick="event.stopPropagation()" onmouseenter="_tipShow(this,'Copy to clipboard')" onmouseleave="_tipHide()">⧉</span>
         <!-- The detected format sits beside the title, where Parse Results puts
              its message-type code. It used to live down in the config bar next
              to the controls that OVERRIDE it, so the fact and the override read
@@ -4773,7 +4773,7 @@ th.me-fm-colhi{color:var(--accent);}
             <div id="auditPopup" class="audit-popup" style="display:none">
               <div class="audit-popup-hdr">
                 <span id="auditPopupTitle" class="audit-popup-title">Record</span>
-                <span class="cp-ico" data-cp="auditPop" onclick="event.stopPropagation();_cpCopy('auditPop', this)" ondblclick="event.stopPropagation()" onmouseenter="_tipShow(this,'Copy to clipboard')" onmouseleave="_tipHide()">⧉</span>
+                <span class="cp-ico cp-empty" data-cp="auditPop" onclick="event.stopPropagation();_cpCopy('auditPop', this)" ondblclick="event.stopPropagation()" onmouseenter="_tipShow(this,'Copy to clipboard')" onmouseleave="_tipHide()">⧉</span>
                 <!-- Same three controls the Parse Results navigator keeps: ±10 on
                      Shift, first and last inside Go to. Requested 2026-09-02. -->
                 <button class="btn" style="height:20px;padding:0 6px;font-size:calc(var(--sz-mono) - 1px)" onclick="auditNavRel(-1, event)" title="Previous record (←) — hold Shift for 10 back">&lt;</button>
@@ -4811,7 +4811,7 @@ th.me-fm-colhi{color:var(--accent);}
 <div class="panel" id="resPanel">
       <div class="panel-header">
         <span class="panel-title" id="resPanelTitle" style="flex:0 1 auto;width:auto;min-width:0;overflow:hidden;text-overflow:ellipsis">Parse Results</span>
-        <span class="cp-ico" data-cp="res" onclick="event.stopPropagation();_cpCopy('res', this)" ondblclick="event.stopPropagation()" onmouseenter="_tipShow(this,'Copy to clipboard')" onmouseleave="_tipHide()">⧉</span>
+        <span class="cp-ico cp-empty" data-cp="res" onclick="event.stopPropagation();_cpCopy('res', this)" ondblclick="event.stopPropagation()" onmouseenter="_tipShow(this,'Copy to clipboard')" onmouseleave="_tipHide()">⧉</span>
         <span id="resTypeBadge" class="pt-badge"></span>
         <span style="flex:1;min-width:0"></span>
         <!-- Track mode's own Export. Not the one in #resCfgControls: Track mode
@@ -4943,7 +4943,7 @@ th.me-fm-colhi{color:var(--accent);}
     <div class="panel" id="rawPanel">
       <div class="panel-header">
         <span class="panel-title" id="rawTitle">Raw Message</span>
-        <span class="cp-ico" data-cp="raw" onclick="event.stopPropagation();_cpCopy('raw', this)" ondblclick="event.stopPropagation()" onmouseenter="_tipShow(this,'Copy to clipboard')" onmouseleave="_tipHide()">⧉</span>
+        <span class="cp-ico cp-empty" data-cp="raw" onclick="event.stopPropagation();_cpCopy('raw', this)" ondblclick="event.stopPropagation()" onmouseenter="_tipShow(this,'Copy to clipboard')" onmouseleave="_tipHide()">⧉</span>
         <button class="panel-toggle" id="rawToggle" onclick="togglePanel('rawPanel','rawToggle','resResizer')" title="Hide panel">−</button>
       </div>
       <div id="rawCfgBar" class="panel-bar">
@@ -15286,7 +15286,10 @@ function _cpElText(el, rowSel) {
     .map(_cpRowText).filter(Boolean).join('\n');
 }
 function _cpIco(key) {
-  return `<span class="cp-ico" data-cp="${key}" onclick="event.stopPropagation();_cpCopy('${key}', this)" ondblclick="event.stopPropagation()"`
+  // Drawn hidden and checked straight after: an icon is never seen, even for
+  // a frame, on a panel with nothing to copy.
+  _cpSyncSoon();
+  return `<span class="cp-ico cp-empty" data-cp="${key}" onclick="event.stopPropagation();_cpCopy('${key}', this)" ondblclick="event.stopPropagation()"`
        + ` onmouseenter="_tipShow(this,'Copy to clipboard')" onmouseleave="_tipHide()">\u29C9</span>`;
 }
 // key '@' is "whatever this header's panel shows": the popups and result
@@ -15323,7 +15326,12 @@ function _cpSync() {
   document.querySelectorAll('.cp-ico[data-cp]').forEach(el => el.classList.toggle('cp-empty', !_cpHas(el.dataset.cp, el)));
 }
 function _cpSyncSoon() { if (!_cpSyncT) _cpSyncT = setTimeout(_cpSync, 150); }
-['mouseover', 'keyup', 'click', 'input'].forEach(ev => document.addEventListener(ev, _cpSyncSoon, true));
+['mouseover', 'keyup', 'click', 'input', 'drop', 'change'].forEach(ev => document.addEventListener(ev, _cpSyncSoon, true));
+// Every icon starts hidden; the first check runs as soon as the page is up,
+// and again whenever a panel that can fill on its own (a restored tree, a
+// parse) redraws — not only after the user next moves the mouse.
+window.addEventListener('DOMContentLoaded', _cpSync);
+window.addEventListener('load', _cpSync);
 
 // The row icon: one floating ⧉ placed at the right end of the row the pointer
 // has rested on, inside whatever scrolls it.
@@ -15874,6 +15882,7 @@ function _msgApplyOverrides(msg, spec) {
 }
 
 function renderFieldTable(msg) {
+  _cpSyncSoon();
   // FIRST, before the metadata bar below draws the tag badges: a tag compares
   // field values, and an override is what those values are.
   _msgApplyOverrides(msg, _meSpecForMsg(msg));
@@ -16567,6 +16576,7 @@ function _resGoToIssue(it) {
 // RENDERING — HEX DUMP
 // ============================================================
 function renderRaw(msg) {
+  _cpSyncSoon();
   // Masked on screen: a masked byte with no character of its own is null.
   const bytes = msg.bytes && _maskScreenOn() ? _maskBytes(msg, msg.bytes) : msg.bytes;
   if (!bytes || !bytes.length) {
@@ -20027,6 +20037,7 @@ function _syncTreeCount(tree) {
 }
 
 function renderDDLTree() {
+  _cpSyncSoon();
   // A name inside a JS string in an onclick: the apostrophe and backslash are
   // escaped for JS, then the whole thing for the HTML attribute. esc() alone
   // left a DEF named O'BRIEN as a syntax error on click.
@@ -23095,7 +23106,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.65.0.1';
+const APP_VERSION  = '1.65.0.2';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -44520,7 +44531,7 @@ function _meSave() {
   <div class="ddl-doc-modal" style="width:min(1040px,96vw)">
     <div class="ddl-doc-hdr">
       <span class="ddl-doc-title">Specification</span>
-      <span class="cp-ico" data-cp="spec" onclick="event.stopPropagation();_cpCopy('spec', this)" ondblclick="event.stopPropagation()" onmouseenter="_tipShow(this,'Copy to clipboard')" onmouseleave="_tipHide()">⧉</span>
+      <span class="cp-ico cp-empty" data-cp="spec" onclick="event.stopPropagation();_cpCopy('spec', this)" ondblclick="event.stopPropagation()" onmouseenter="_tipShow(this,'Copy to clipboard')" onmouseleave="_tipHide()">⧉</span>
       <span style="flex:1"></span>
       <button class="btn btn-ico" onclick="closeSpec()" title="Close">✕</button>
     </div>
@@ -44543,7 +44554,7 @@ function _meSave() {
   <div class="ddl-doc-modal" style="width:min(1300px,96vw)">
     <div class="ddl-doc-hdr">
       <span class="ddl-doc-title" id="followTitle">Following</span>
-      <span class="cp-ico" data-cp="follow" onclick="event.stopPropagation();_cpCopy('follow', this)" ondblclick="event.stopPropagation()" onmouseenter="_tipShow(this,'Copy to clipboard')" onmouseleave="_tipHide()">⧉</span>
+      <span class="cp-ico cp-empty" data-cp="follow" onclick="event.stopPropagation();_cpCopy('follow', this)" ondblclick="event.stopPropagation()" onmouseenter="_tipShow(this,'Copy to clipboard')" onmouseleave="_tipHide()">⧉</span>
       <div style="display:flex;gap:6px;align-items:center;flex-shrink:0;margin-left:auto">
         <button class="btn btn-ico" onclick="closeFollow()">✕</button>
       </div>
@@ -44555,7 +44566,7 @@ function _meSave() {
   <div class="ddl-doc-modal" style="width:min(980px,96vw)">
     <div class="ddl-doc-hdr">
       <span class="ddl-doc-title" id="journalTitle">Parse journal</span>
-      <span class="cp-ico" data-cp="journal" onclick="event.stopPropagation();_cpCopy('journal', this)" ondblclick="event.stopPropagation()" onmouseenter="_tipShow(this,'Copy to clipboard')" onmouseleave="_tipHide()">⧉</span>
+      <span class="cp-ico cp-empty" data-cp="journal" onclick="event.stopPropagation();_cpCopy('journal', this)" ondblclick="event.stopPropagation()" onmouseenter="_tipShow(this,'Copy to clipboard')" onmouseleave="_tipHide()">⧉</span>
       <input id="journalFilter" placeholder="Filter lines…" oninput="journalFilter()" autocomplete="off">
       <div style="display:flex;gap:6px;align-items:center;flex-shrink:0">
         <button class="btn btn-primary" onclick="journalDownload()" title="Download the journal as text — masked by Settings → Mask sensitive fields → Export files">⬇ Download</button>
@@ -44592,7 +44603,7 @@ function _meSave() {
          instead of being crowded in beside the name of the dialog. -->
     <div class="ddl-doc-hdr">
       <span id="ddlDocTitle" class="ddl-doc-title"></span>
-      <span class="cp-ico" data-cp="ddlDoc" onclick="event.stopPropagation();_cpCopy('ddlDoc', this)" ondblclick="event.stopPropagation()" onmouseenter="_tipShow(this,'Copy to clipboard')" onmouseleave="_tipHide()">⧉</span>
+      <span class="cp-ico cp-empty" data-cp="ddlDoc" onclick="event.stopPropagation();_cpCopy('ddlDoc', this)" ondblclick="event.stopPropagation()" onmouseenter="_tipShow(this,'Copy to clipboard')" onmouseleave="_tipHide()">⧉</span>
       <button class="btn" onclick="closeDDLDoc()" title="Close">✕</button>
     </div>
     <div class="ddl-doc-ctl" id="ddlDocControls">
@@ -45242,7 +45253,7 @@ function _meSave() {
     <div class="me-main">
       <div class="me-sidebar me-pane pb-read" id="bl-sidebar">
         <div class="me-pane-hdr"><span class="me-pane-title">Saved</span>
-          <span class="cp-ico" data-cp="blSaved" onclick="event.stopPropagation();_cpCopy('blSaved', this)" ondblclick="event.stopPropagation()" onmouseenter="_tipShow(this,'Copy to clipboard')" onmouseleave="_tipHide()">⧉</span>
+          <span class="cp-ico cp-empty" data-cp="blSaved" onclick="event.stopPropagation();_cpCopy('blSaved', this)" ondblclick="event.stopPropagation()" onmouseenter="_tipShow(this,'Copy to clipboard')" onmouseleave="_tipHide()">⧉</span>
           <span class="tree-hdr-count" id="bl-count">0</span>
           <button class="panel-toggle" id="bl-sidebar-toggle" onclick="blToggleSidebar()" title="Hide panel">−</button></div>
         <div class="panel-bar">
@@ -45261,7 +45272,7 @@ function _meSave() {
         <div class="me-pane pb-read bl-pane">
           <div class="me-pane-hdr">
             <span class="me-pane-title" id="bl-pane-title">Baseline</span>
-            <span class="cp-ico" data-cp="blPane" onclick="event.stopPropagation();_cpCopy('blPane', this)" ondblclick="event.stopPropagation()" onmouseenter="_tipShow(this,'Copy to clipboard')" onmouseleave="_tipHide()">⧉</span>
+            <span class="cp-ico cp-empty" data-cp="blPane" onclick="event.stopPropagation();_cpCopy('blPane', this)" ondblclick="event.stopPropagation()" onmouseenter="_tipShow(this,'Copy to clipboard')" onmouseleave="_tipHide()">⧉</span>
           </div>
           <div class="bl-pane-body" id="bl-right"><div class="bl-empty">No baselines yet. Parse a message and press &#9733; Save in Parse Results.</div></div>
         </div>
@@ -45297,14 +45308,14 @@ function _meSave() {
       <div class="me-sidebar me-pane pb-read" id="me-sidebar" oncontextmenu="_meCtxEntityPanel(event)">
         <div class="me-pane-hdr">
           <span class="me-pane-title">Classes</span>
-          <span class="cp-ico" data-cp="meClasses" onclick="event.stopPropagation();_cpCopy('meClasses', this)" ondblclick="event.stopPropagation()" onmouseenter="_tipShow(this,'Copy to clipboard')" onmouseleave="_tipHide()">⧉</span>
+          <span class="cp-ico cp-empty" data-cp="meClasses" onclick="event.stopPropagation();_cpCopy('meClasses', this)" ondblclick="event.stopPropagation()" onmouseenter="_tipShow(this,'Copy to clipboard')" onmouseleave="_tipHide()">⧉</span>
           <button class="panel-toggle" id="me-sidebar-toggle" onclick="_meToggleSidebar()" title="Hide panel">−</button>
         </div>
         <div class="me-ent-list" id="me-ent-list">
           <div class="me-sidebar-sect" id="me-sect-msgs">
             <div class="panel-bar me-sidebar-hdr">
               <span class="me-sidebar-title">Messages</span>
-              <span class="cp-ico" data-cp="meMsgs" onclick="event.stopPropagation();_cpCopy('meMsgs', this)" ondblclick="event.stopPropagation()" onmouseenter="_tipShow(this,'Copy to clipboard')" onmouseleave="_tipHide()">⧉</span>
+              <span class="cp-ico cp-empty" data-cp="meMsgs" onclick="event.stopPropagation();_cpCopy('meMsgs', this)" ondblclick="event.stopPropagation()" onmouseenter="_tipShow(this,'Copy to clipboard')" onmouseleave="_tipHide()">⧉</span>
               <button class="btn" onclick="_meAddMsg()">+ New</button>
               <button class="panel-toggle" id="me-sect-msgs-toggle" onclick="_meToggleListSect('msgs')" title="Hide panel">−</button>
             </div>
@@ -45313,7 +45324,7 @@ function _meSave() {
           <div class="me-sidebar-sect" id="me-sect-other">
             <div class="panel-bar me-sidebar-hdr">
               <span class="me-sidebar-title" title="Structures that are neither a whole message nor a file — recognized from bytes like a message, but tried after every message">Data</span>
-              <span class="cp-ico" data-cp="meOther" onclick="event.stopPropagation();_cpCopy('meOther', this)" ondblclick="event.stopPropagation()" onmouseenter="_tipShow(this,'Copy to clipboard')" onmouseleave="_tipHide()">⧉</span>
+              <span class="cp-ico cp-empty" data-cp="meOther" onclick="event.stopPropagation();_cpCopy('meOther', this)" ondblclick="event.stopPropagation()" onmouseenter="_tipShow(this,'Copy to clipboard')" onmouseleave="_tipHide()">⧉</span>
               <button class="btn" onclick="_meAddOther()">+ New</button>
               <button class="panel-toggle" id="me-sect-other-toggle" onclick="_meToggleListSect('other')" title="Hide panel">−</button>
             </div>
@@ -45322,7 +45333,7 @@ function _meSave() {
           <div class="me-sidebar-sect" id="me-sect-files">
             <div class="panel-bar me-sidebar-hdr">
               <span class="me-sidebar-title">Files</span>
-              <span class="cp-ico" data-cp="meFiles" onclick="event.stopPropagation();_cpCopy('meFiles', this)" ondblclick="event.stopPropagation()" onmouseenter="_tipShow(this,'Copy to clipboard')" onmouseleave="_tipHide()">⧉</span>
+              <span class="cp-ico cp-empty" data-cp="meFiles" onclick="event.stopPropagation();_cpCopy('meFiles', this)" ondblclick="event.stopPropagation()" onmouseenter="_tipShow(this,'Copy to clipboard')" onmouseleave="_tipHide()">⧉</span>
               <button class="btn" onclick="_meAddFile()">+ New</button>
               <button class="panel-toggle" id="me-sect-files-toggle" onclick="_meToggleListSect('files')" title="Hide panel">−</button>
             </div>

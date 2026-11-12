@@ -27744,6 +27744,149 @@ console.log('\nreview 2026-11-11 — performance');
     }
   });
 }
+
+console.log('\nDDL tree — Delete on a DEF');
+{
+  const run = c => vm.runInContext(c, sandbox);
+  const withFn = (name, fn, body) => {
+    sandbox.__orig = run(name); sandbox.__repl = fn;
+    run(`${name} = __repl`);
+    try { return body(); } finally { run(`${name} = __orig`); }
+  };
+  const FILE = '* header\n?SECTION A\nDEF A.\n02 X PIC X.\nEND\n\nDEF B.\n02 Y PIC X.\nEND\n\nDEF C PIC X(3).\nDEF D.\n02 Z PIC X.\nEND';
+
+  test('[REGRESSION] taking one DEF out of a file leaves the others whole', () => {
+    const R = run('_removeDefFromText');
+    eq(R(FILE, 'b'), '* header\n?SECTION A\nDEF A.\n02 X PIC X.\nEND\n\nDEF C PIC X(3).\nDEF D.\n02 Z PIC X.\nEND', 'B out, one blank folded');
+    eq(R(FILE, 'C'), '* header\n?SECTION A\nDEF A.\n02 X PIC X.\nEND\n\nDEF B.\n02 Y PIC X.\nEND\n\nDEF D.\n02 Z PIC X.\nEND', 'a single-line DEF is one line');
+    eq(R(FILE, 'A'), '* header\n?SECTION A\n\nDEF B.\n02 Y PIC X.\nEND\n\nDEF C PIC X(3).\nDEF D.\n02 Z PIC X.\nEND', 'the comments before it stay');
+    eq(R(FILE, 'NOPE'), null, 'a DEF that is not there');
+    eq(R('DEFINITION IS E.\n02 Q PIC X.\nEND\nDEF F.\n02 W PIC X.\nEND', 'E'), 'DEF F.\n02 W PIC X.\nEND', 'the IS form');
+  });
+
+  test('[REGRESSION] Delete on a DEF deletes that DEF, not its file, and drops its state', () => {
+    // It deleted the whole file, every definition in it.
+    const st = run('S');
+    const was = { tree: st.ddlTree, scope: st.scope, ov: st.deOverrides, ex: st.excl, po: st.parseOverride, base: st.editorBaseline };
+    try {
+      st.ddlTree = { V: { S1: { F: FILE } } };
+      st.scope = { type: 'def', vol: 'V', sv: 'S1', name: 'F', defName: 'B' };
+      st.editorBaseline = null;
+      st.deOverrides = { 'V/S1/F/B': { 1: {} }, 'V/S1/F/A': { 2: {} } };
+      st.excl = new Set(['V/S1/F/B']);
+      st.parseOverride = { vol: 'V', sv: 'S1', name: 'F', defName: 'B' };
+      let asked = '';
+      withFn('confirmDelete', (what, cb) => { asked = what; cb(); }, () =>
+        withFn('_ddlEditorDirty', () => false, () =>
+          withFn('saveTree', () => {}, () => withFn('selectScope', () => {}, () => run('deleteScope')()))));
+      assert.ok(/DEF "B" from file "F"/.test(asked), 'the dialog does not name the DEF: ' + asked);
+      assert.ok(st.ddlTree.V.S1.F != null, 'the file is gone');
+      assert.ok(!/DEF B\./.test(st.ddlTree.V.S1.F) && /DEF A\./.test(st.ddlTree.V.S1.F) && /DEF D\./.test(st.ddlTree.V.S1.F), 'wrong text left');
+      deepEq(Object.keys(st.deOverrides), ['V/S1/F/A'], 'its DE overrides went, the neighbour\'s stayed');
+      eq(st.excl.size, 0, 'its exclusion went');
+      eq(st.parseOverride, null, 'its parse override went');
+    } finally {
+      st.ddlTree = was.tree; st.scope = was.scope; st.deOverrides = was.ov; st.excl = was.ex; st.parseOverride = was.po; st.editorBaseline = was.base;
+      run('_ddlTreeVersion++');
+    }
+  });
+
+  test('[REGRESSION] Delete on a DEF waits while the editor has unsaved changes', () => {
+    const st = run('S'), was = { tree: st.ddlTree, scope: st.scope };
+    try {
+      st.ddlTree = { V: { S1: { F: FILE } } };
+      st.scope = { type: 'def', vol: 'V', sv: 'S1', name: 'F', defName: 'B' };
+      let asked = false;
+      withFn('confirmDelete', () => { asked = true; }, () => withFn('_ddlEditorDirty', () => true, () => run('deleteScope')()));
+      eq(asked, false, 'it offered to rewrite a file with edits pending');
+      eq(st.ddlTree.V.S1.F, FILE, 'the file changed');
+    } finally { st.ddlTree = was.tree; st.scope = was.scope; }
+  });
+}
+console.log('\nreview 2026-11-11 — part 2 (UI)');
+{
+  const run = c => vm.runInContext(c, sandbox);
+  const withFn = (name, fn, body) => {
+    sandbox.__orig = run(name); sandbox.__repl = fn;
+    run(`${name} = __repl`);
+    try { return body(); } finally { run(`${name} = __orig`); }
+  };
+  const meState = () => run('_meState');
+  const setMeState = v => { sandbox.__ms = v; run('_meState = __ms'); };
+
+  test('[REGRESSION] a Parse Spec with a JSON error is kept per class and named on Save', () => {
+    // Only valid JSON reached the class, so a half-typed spec was lost on a
+    // class switch or a collapse, and Save said nothing about it.
+    const keep = meState();
+    const it = { name: 'A', label: 'A', parse_spec_binary: [{ a: 1 }], parse_spec_binary_source: '[{"a":1}]' };
+    try {
+      setMeState({ specs: [it], selIdx: 0, dirty: false, sections: {}, parseSpecVariant: 'binary' });
+      run('_mePsChange')('[{"a":1}, {');
+      eq(run('_mePsDraftGet')(it, 'binary'), '[{"a":1}, {', 'the invalid text is kept');
+      eq(run('_mePsDraftGet')(it, 'ascii'), null, 'only for the variant it was typed in');
+      eq(JSON.stringify(it.parse_spec_binary), '[{"a":1}]', 'the class keeps its last valid spec');
+      const mount = psFnSource('_mePsMountCM');
+      assert.ok(/const initial = draft != null \? draft/.test(mount), 'mounting does not restore the draft');
+      assert.ok(/if \(draft != null\) _mePsChange\(draft\)/.test(mount), 'a restored draft does not show its error');
+      let said = '';
+      withFn('_fmtSave', () => true, () => withFn('_meFlash', (m, l) => { if (l === 'warn') said = m; }, () =>
+        withFn('renderCurrent', () => {}, () => run('_meSave')())));
+      assert.ok(/Parse Spec of A has a JSON error/.test(said), 'Save did not say the spec was not saved: ' + said);
+      run('_mePsChange')('[{"a":2}]');
+      eq(run('_mePsDraftGet')(it, 'binary'), null, 'valid text clears the draft');
+      said = '';
+      withFn('_fmtSave', () => true, () => withFn('_meFlash', (m, l) => { if (l === 'warn') said = m; }, () =>
+        withFn('renderCurrent', () => {}, () => run('_meSave')())));
+      eq(said, '', 'a clean Save warns about nothing');
+    } finally { setMeState(keep); }
+  });
+
+  test('[REGRESSION] Clear DEs and deleting a business rule can be undone', () => {
+    const keep = meState();
+    try {
+      const it = { name: 'A', label: 'A', rules: [{ name: 'R1' }, { name: 'R2' }] };
+      setMeState({ specs: [it], selIdx: 0, dirty: false, sections: {}, editRule: -1 });
+      let offered = null;
+      withFn('_meFlash', (m, l, act) => { if (act) offered = m; }, () =>
+        withFn('_meRuleRepaint', () => {}, () => withFn('_meRenderSidebar', () => {}, () => run('_meRuleDel')(0))));
+      eq(it.rules.length, 1, 'the rule was not deleted');
+      assert.ok(/Deleted the business rule "R1"/.test(offered || ''), 'no Undo offered: ' + offered);
+      withFn('_meFlash', () => {}, () => withFn('_meRenderRight', () => {}, () => withFn('_meRenderSidebar', () => {}, () => run('_meUndoApply')())));
+      eq(JSON.stringify(meState().specs[0].rules), '[{"name":"R1"},{"name":"R2"}]', 'undo did not bring the rule back');
+
+      const src = psFnSource('_meFmClearDEs');
+      assert.ok(/_meUndoable\(`Cleared \$\{n\} DE override/.test(src), 'Clear DEs is not undoable');
+      assert.ok(src.indexOf('_meUndoable(') < src.indexOf('_meOvSetDeList(item, [])'), 'the clear runs outside the undo');
+      assert.ok(/if \(!n\) \{ _meFlash\('No DE overrides to clear'\); return; \}/.test(src), 'nothing to clear still offers Undo');
+    } finally { setMeState(keep); }
+  });
+
+  test('[REGRESSION] the Parse Results filter survives a re-render and is applied to the new rows', () => {
+    // renderFieldTable emptied it on every render, so ‹ › dropped it.
+    const src = psFnSource('renderFieldTable');
+    assert.ok(!/_filterIn\.value = ''/.test(src), 'the render empties the filter');
+    assert.ok(/if \(_filterIn\.value\) filterParsePanel\(_filterIn\.value\)/.test(src), 'the kept filter is not applied');
+    assert.ok(/resFilterInput'\)\.value = ''/.test(psFnSource('clearAll')), 'Clear All keeps an old filter');
+  });
+
+  test('[REGRESSION] a failed copy is a warning, not a success toast', () => {
+    for (const fn of ['copyDDLDoc', '_copyFallback'])
+      assert.ok(/flash\('Copy failed', 'warn'\)/.test(psFnSource(fn)), `${fn} shows a failure as success`);
+    for (const fn of ['_copyFallback'])
+      assert.ok(!/showToast\('Copy failed'\)/.test(psFnSource(fn)), `${fn} still toasts the failure`);
+    assert.ok(!/showToast\([^;]*copy failed/i.test(APP_SRC), 'a copy failure still goes through showToast');
+    assert.ok(!/ok\('Copy failed'\)/.test(psFnSource('copyDDLDoc')), 'DDL Doc still reports a failed copy through its success path');
+    // execCommand answers false rather than throwing: that is a failure too.
+    let toast = '', warn = '';
+    run('document.execCommand = () => false');
+    try {
+      withFn('showToast', m => { toast = m; }, () => withFn('flash', (m, l) => { if (l === 'warn') warn = m; }, () =>
+        run('_copyFallback')('x', '✓ done')));
+    } finally { domElStore.delete('execCommand'); }
+    eq(toast, '', 'a refused copy said it copied');
+    eq(warn, 'Copy failed', 'a refused copy was not reported');
+  });
+}
 // ── Summary ───────────────────────────────────────────────────────────────────
 console.log(`\n${'─'.repeat(50)}`);
 if (failed === 0) {

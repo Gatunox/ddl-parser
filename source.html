@@ -8548,8 +8548,8 @@ function copyDDLDoc() {
     ta.style.cssText = 'position:fixed;opacity:0;top:0;left:0;';
     document.body.appendChild(ta);
     ta.focus(); ta.select();
-    try { document.execCommand('copy') ? ok('DDLDOC copied to clipboard') : ok('Copy failed'); }
-    catch(e) { ok('Copy failed'); }
+    try { document.execCommand('copy') ? ok('DDLDOC copied to clipboard') : flash('Copy failed', 'warn'); }
+    catch(e) { flash('Copy failed', 'warn'); }
     document.body.removeChild(ta);
   };
   if (navigator.clipboard?.writeText) {
@@ -15225,8 +15225,10 @@ function _copyFallback(text, msg) {
   const ta = document.createElement('textarea');
   ta.value = text; ta.style.cssText = 'position:fixed;opacity:0;top:0;left:0';
   document.body.appendChild(ta); ta.focus(); ta.select();
-  try { document.execCommand('copy'); showToast(msg || '✓ Copied to clipboard'); }
-  catch(e) { showToast('Copy failed'); }
+  // execCommand answers false rather than throwing when the copy is refused.
+  let ok = false;
+  try { ok = document.execCommand('copy'); } catch(e) { ok = false; }
+  if (ok) showToast(msg || '✓ Copied to clipboard'); else flash('Copy failed', 'warn');
   document.body.removeChild(ta);
 }
 function _vbarClose(key = 'ddl') {
@@ -15392,6 +15394,7 @@ function clearAll() {
   document.getElementById('trkExportBtn').style.display = 'none';
   document.getElementById('colCfgBtn').style.display = 'none';
   document.getElementById('resFilterInput').style.display = 'none';
+  document.getElementById('resFilterInput').value = '';
   document.getElementById('hideRedefBtn').style.display = 'none';
   ['resCollapseBtn','resGroupDataBtn'].forEach(id => {
     const b = document.getElementById(id); if (b && b.style) b.style.display = 'none'; });
@@ -16158,7 +16161,13 @@ function renderFieldTable(msg) {
   // Always show filter and Hide Redef when a message is active; redef button is visually inert when no redefines present
   const _filterIn  = document.getElementById('resFilterInput');
   const _redefBtn  = document.getElementById('hideRedefBtn');
-  if (_filterIn) { _filterIn.style.display = ''; _filterIn.value = ''; _syncFilterPos(); }
+  // The filter is kept across renders — stepping to the next message with ‹ ›
+  // or re-parsing keeps what the user is looking for, and it is applied to the
+  // fresh rows. Only Clear All empties it.
+  if (_filterIn) {
+    _filterIn.style.display = ''; _syncFilterPos();
+    if (_filterIn.value) filterParsePanel(_filterIn.value);
+  }
   if (_redefBtn) { _redefBtn.style.display = 'inline-flex'; }
   // Re-apply hide-redef class if state is active
   if (S.hideRedefines) document.getElementById('resContainer').classList.add('hide-redef');
@@ -20476,7 +20485,7 @@ function copyFieldToClipboard(fid) {
   ta.select();
   const ok = document.execCommand('copy');
   document.body.removeChild(ta);
-  showToast(ok ? `Field ${fid} copied to clipboard` : `Field ${fid} — copy failed`);
+  if (ok) showToast(`Field ${fid} copied to clipboard`); else flash(`Field ${fid} — copy failed`, 'warn');
 }
 
 // ---- Copy full parsed message to clipboard on double-click of record counter ----
@@ -20501,7 +20510,7 @@ function copyMsgToClipboard() {
   ta.select();
   const ok = document.execCommand('copy');
   document.body.removeChild(ta);
-  showToast(ok ? `✓ Message ${S.curIdx + 1} copied to clipboard` : 'Copy failed');
+  if (ok) showToast(`✓ Message ${S.curIdx + 1} copied to clipboard`); else flash('Copy failed', 'warn');
 }
 
 // A volume, subvolume or file name as the tree stores it: trimmed and upper-
@@ -21312,8 +21321,60 @@ function saveDDL() {
   _commit(newName);
 }
 
+// The text of an HPE DDL file with one definition taken out: from its DEF line
+// to its END (or the DEF line alone, for a single-line DEF), by the same rules
+// splitHPEDDL reads it with. The comments and ?SECTION lines before it stay —
+// they may belong to more than this definition. One blank line is folded where
+// the block was, so the gap does not double. null when the DEF is not there.
+function _removeDefFromText(text, defName) {
+  const lines = String(text || '').split('\n');
+  const want = String(defName || '').toUpperCase();
+  let start = -1, end = -1, cur = null, curStart = -1;
+  for (let i = 0; i < lines.length && end < 0; i++) {
+    const line = lines[i];
+    if (cur) {
+      if (/^\s*END\b/i.test(line)) { if (cur === want) { start = curStart; end = i; } cur = null; }
+      continue;
+    }
+    const m = line.match(/^\s*(?:DEF|DEFINITION|RECORD)\s+(\S+)/i);
+    if (!m) continue;
+    let nm = m[1].replace(/\.$/, '').toUpperCase();
+    if (nm === 'IS') { const m2 = line.match(/^\s*(?:DEF|DEFINITION|RECORD)\s+IS\s+(\S+)/i); if (m2) nm = m2[1].replace(/\.$/, '').toUpperCase(); }
+    const rest = line.slice(m.index + m[0].length);
+    if (/\b(?:PIC(?:TURE)?|TYPE)\b/i.test(rest) && /\.\s*$/.test(line)) {
+      if (nm === want) { start = end = i; }
+      continue;
+    }
+    cur = nm; curStart = i;
+  }
+  if (start < 0) return null;
+  lines.splice(start, end - start + 1);
+  if (start > 0 && start < lines.length && !lines[start - 1].trim() && !lines[start].trim()) lines.splice(start, 1);
+  return lines.join('\n');
+}
+
+// Delete on a DEF node takes out that definition alone. It used to delete the
+// FILE it sits in, every other definition with it — the dialog said so, but
+// the menu entry sat on the DEF and said only "Delete". Requested 2026-11-12.
+function _deleteDefOnly(sc) {
+  const { vol, sv, name, defName } = sc;
+  const text = S.ddlTree[vol]?.[sv]?.[name];
+  if (text == null) return;
+  if (_ddlEditorDirty()) { flash('Save or discard the editor changes first — the file is about to change', 'warn'); return; }
+  const next = _removeDefFromText(text, defName);
+  if (next == null) { flash(`DEF "${defName}" was not found in ${name}`, 'warn'); return; }
+  confirmDelete(`the DEF "${defName}" from file "${name}" (the rest of the file stays)`, () => {
+    S.ddlTree[vol][sv][name] = next;
+    _movePathState([vol, sv, name, defName], null);
+    saveTree(); buildUnresolvedRefs();
+    selectScope('ddl', vol, sv, name);
+    flash(`Deleted DEF "${defName}"`);
+  });
+}
+
 function deleteScope() {
   const sc = S.scope; if (!sc) return;
+  if (sc.type === 'def' && sc.defName && S.ddlTree[sc.vol]?.[sc.sv]?.[sc.name]) { _deleteDefOnly(sc); return; }
 
   const doDelete = () => {
     if      (sc.type === 'vol') { delete S.ddlTree[sc.vol]; S.treeExp.delete(sc.vol); }
@@ -21455,7 +21516,7 @@ function buildCtxMenu(e) {
       } else {
         items.push({ icon: isExcluded(vol, sv, name) ? '◎' : '⊘', label: isExcluded(vol, sv, name) ? 'Include in auto-detect' : 'Exclude from auto-detect', fn: () => toggleExclusion(vol, sv, name) });
       }
-      items.push({ icon: '✕', label: 'Delete', fn: () => deleteScope(), danger: true });
+      items.push({ icon: '✕', label: t === 'def' && defName ? `Delete DEF  "${defName}"` : `Delete File  "${name}"`, fn: () => deleteScope(), danger: true });
     }
   }
   showCtxMenu(e.clientX, e.clientY, items);
@@ -22722,7 +22783,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.64.9.0';
+const APP_VERSION  = '1.64.10.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -29010,16 +29071,35 @@ function _mePsSetErr(msg) {
   if (host) { if (msg) host.setAttribute('data-state', 'err'); else host.removeAttribute('data-state'); }
 }
 
+// Text of a Parse Spec that does not parse, per class and variant. Only valid
+// JSON reaches the class, so without this the half-typed spec was thrown away
+// the moment the user switched class or variant or collapsed the section, and
+// the editor came back showing the last valid one. Keyed on the class OBJECT:
+// a close rebuilds the list from storage, and the drafts go with it.
+const _mePsDrafts = new WeakMap();   // item → { binary?: text, ascii?: text }
+function _mePsDraftGet(item, variant) {
+  const d = item && _mePsDrafts.get(item);
+  return d && typeof d[variant] === 'string' ? d[variant] : null;
+}
+function _mePsDraftSet(item, variant, text) {
+  if (!item) return;
+  const d = _mePsDrafts.get(item) || {};
+  if (text == null) delete d[variant]; else d[variant] = text;
+  if (Object.keys(d).length) _mePsDrafts.set(item, d); else _mePsDrafts.delete(item);
+}
+
 function _mePsChange(val) {
   const item = _meCurItem();
   if (!item) return;
-  const { spec: specField, src: srcField } = _mePsFieldsForVariant(_mePsActiveVariant());
+  const variant = _mePsActiveVariant();
+  const { spec: specField, src: srcField } = _mePsFieldsForVariant(variant);
   try {
     const stripped = _stripJsonc(val || '[]');
     const parsed   = JSON.parse(stripped);
     if (!Array.isArray(parsed)) throw new Error('top-level value must be an array');
     item[specField] = parsed;
     item[srcField]  = val;   // preserve comments + trailing commas
+    _mePsDraftSet(item, variant, null);
     _mePsSetErr('');
     _meSetDirty();
     _mePsScheduleLint(item, parsed);
@@ -29039,6 +29119,7 @@ function _mePsChange(val) {
     clearTimeout(_mePsLintTimer);
     _mePsLintMsgs = [];
     _mePsInertMsgs = new Map();
+    _mePsDraftSet(item, variant, val);
     _mePsSetErr(e.message);
     if (_mePsCM && _mePsLintEffect) _mePsCM.dispatch({ effects: _mePsLintEffect.of(null) });
   }
@@ -30251,7 +30332,10 @@ function _mePsMountCM(item) {
   if (!host || !window.CM || !item) return null;
   const { EditorView, EditorState, history, keymap, defaultKeymap, historyKeymap, placeholder, lineNumbers, highlightActiveLine, highlightActiveLineGutter } = window.CM;
   const { spec: specField, src: srcField } = _mePsFieldsForVariant(_mePsActiveVariant());
-  const initial = (typeof item[srcField] === 'string' && item[srcField].trim())
+  // An unfinished (invalid) edit comes back as it was left — see _mePsDrafts.
+  const draft = _mePsDraftGet(item, _mePsActiveVariant());
+  const initial = draft != null ? draft
+    : (typeof item[srcField] === 'string' && item[srcField].trim())
     ? item[srcField]
     : JSON.stringify(item[specField] || [], null, 2);
   // Same Tab override as the DDL editor: insert a literal tab at the cursor
@@ -30285,8 +30369,9 @@ function _mePsMountCM(item) {
     parent: host,
   });
   // Lint the freshly mounted content so existing warnings show without
-  // requiring an edit first.
-  if (Array.isArray(item[specField])) _mePsScheduleLint(item, item[specField]);
+  // requiring an edit first. A restored draft shows its JSON error instead.
+  if (draft != null) _mePsChange(draft);
+  else if (Array.isArray(item[specField])) _mePsScheduleLint(item, item[specField]);
   _mePsInitSplit();
   // A freshly mounted editor has no history, so both start dead rather than
   // inheriting the enabled state of whatever spec was open before.
@@ -31587,8 +31672,7 @@ function _meFmCopyFieldName(qn, ev) {
   let ok = false;
   try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
   document.body.removeChild(ta);
-  showToast(ok ? `Field name ${name} copied to the clipboard`
-                : `${name} — copy failed`);
+  if (ok) showToast(`Field name ${name} copied to the clipboard`); else flash(`${name} — copy failed`, 'warn');
 }
 
 // Synchronous full build — kept for small DDLs and non-staged callers.
@@ -32790,15 +32874,19 @@ function _meFmClearDEs() {
   // disagreed with what happened.
   const all = _meOvAll(item);
   const n = Object.keys(all).filter(id => all[id].de !== undefined).length;
-  _meOvSetDeList(item, []);
-  _meAutoOrderSnap.delete(item);
-  _meFmUiSave(item, { autoOrder: false, autoOrderSnap: null });
-  document.getElementById('me-fm-auto-btn')?.classList.remove('btn-accent-on');
-  // Through the shared funnel: this used to refresh only the TABLE, so the
-  // overrides list went on showing DE chips for overrides that no longer
-  // existed, and the panes narrated the previous state.
-  _meFmAfterAct();
-  _meFlash(n ? `Cleared ${n} DE override${n !== 1 ? 's' : ''} — back to the natural order` : 'No DE overrides to clear');
+  if (!n) { _meFlash('No DE overrides to clear'); return; }
+  // Undoable like the other bulk removals: a whole entity's DE work goes in
+  // one click. Undo brings the overrides back; Auto Order stays off.
+  _meUndoable(`Cleared ${n} DE override${n !== 1 ? 's' : ''} — back to the natural order`, () => {
+    _meOvSetDeList(item, []);
+    _meAutoOrderSnap.delete(item);
+    _meFmUiSave(item, { autoOrder: false, autoOrderSnap: null });
+    document.getElementById('me-fm-auto-btn')?.classList.remove('btn-accent-on');
+    // Through the shared funnel: this used to refresh only the TABLE, so the
+    // overrides list went on showing DE chips for overrides that no longer
+    // existed, and the panes narrated the previous state.
+    _meFmAfterAct();
+  }, 'warn');
 }
 
 // Map<groupId, lenFieldId|null> over the overrides map — null means "the
@@ -34909,13 +34997,16 @@ function _meRuleCancel() {
 }
 function _meRuleDel(ri) {
   const it = _meCurItem(); if (!it) return;
-  _meRulesOf(it).splice(ri, 1);
-  if (!it.rules.length) delete it.rules;
-  if (_meState.editRule === ri) { _meState.editRule = -1; _meState.rulePend = null; }
-  else if (_meState.editRule > ri) _meState.editRule--;
-  _meSetDirty();
-  _meRuleRepaint();
-  _meRenderSidebar();
+  const gone = _meRulesOf(it)[ri]; if (!gone) return;
+  _meUndoable(`Deleted the business rule${gone.name ? ' "' + gone.name + '"' : ''}`, () => {
+    _meRulesOf(it).splice(ri, 1);
+    if (!it.rules.length) delete it.rules;
+    if (_meState.editRule === ri) { _meState.editRule = -1; _meState.rulePend = null; }
+    else if (_meState.editRule > ri) _meState.editRule--;
+    _meSetDirty();
+    _meRuleRepaint();
+    _meRenderSidebar();
+  }, 'warn');
 }
 // Name and values edit the pending copy quietly — a repaint per keystroke would
 // take the caret. An op repaints, because it enables or disables the value box.
@@ -44044,6 +44135,11 @@ function _meSave() {
   if (btn) btn.disabled = true;
   const s = document.getElementById('me-status');
   if (s) { s.textContent = 'Saved.'; setTimeout(() => { if (s) s.textContent = ''; }, 2000); }
+  // A Parse Spec with a JSON error is not in the class — what was saved is its
+  // last valid version, and the user is told so rather than finding out later.
+  const broken = (_meState.specs || []).filter(it => it && _mePsDrafts.has(it))
+    .map(it => it.label || it.name || 'unnamed');
+  if (broken.length) _meFlash(`Saved — the Parse Spec of ${broken.join(', ')} has a JSON error; its last valid version was saved`, 'warn');
   // Refresh parse_spec variant counts so the dropdown reflects the saved state.
   if (typeof _mePsRefreshVariantLabels === 'function') {
     _mePsRefreshVariantLabels(_meCurItem());

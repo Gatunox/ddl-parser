@@ -19517,7 +19517,7 @@ test('the row uses the class colour and drops the legacy lookup', () => {
   const src = psFnSource('_auditBuildRowHtml');
   assert.ok(!/MSG_TYPE_MAP/.test(src), 'the legacy colour table is still consulted');
   assert.ok(/_btypeStyle\(badge\.color\)/.test(src), 'the class colour is not used');
-  assert.ok(/_auditBadgeType\(peek, r\.messageLen\)/.test(src),
+  assert.ok(/_auditBadgeType\(r\.payloadPeek, r\.messageLen, \{ source: r\.source, dest: r\.dest \}\)/.test(src),
     'the record length is not passed, so length recognizers cannot be judged');
 });
 
@@ -26723,6 +26723,22 @@ console.log('\ngenerate a message');
       'B4:ABC/0012', 'the parse alone does not find the token');
   }));
 
+  test('[REGRESSION] the simple ISO parser finds the tokens in DE 63', () => withTok(() => {
+    // Its rawBytes keep the LLL prefix, so the eyecatcher test read a length
+    // digit, not "& ", and no token section ever appeared for that parser.
+    run('S.ddlTree.SWITCH = { 1987: { "Standard ISO": ISO8583_DDL } }; _ddlTreeVersion++;');
+    const item = { name: 'ISO', label: 'ISO 87', ddl_bindings: ['SWITCH/1987/Standard ISO'],
+      parse_spec_binary: [{ 'read-ddl': { binding: 0, from: 'ISO_PFX', until: 'MTI' } }, { 'read-bitmap': { field: 'BMP', encoding: 'hex' } },
+        { 'read-bitmap-fields': 'BMP' }, { 'token-area': 'ANY' }] };
+    const r = genTok(item, [{ id: 'B4', values: { 'PT-SRV': 'ABC', CNT: '12' } }], { des: [3, 63], rawId: '63' });
+    const fields = parseMessage(r.out, parseSimpleDDL(ISO8583_DDL));
+    const de63 = fields.find(f => f.id === '63');
+    eq(String.fromCharCode(de63.rawBytes[0]), '0', 'fixture: rawBytes start with the LLL prefix');
+    const t = run('extractTokensFromMessage')(fields, r.out, 'ISO', 'SWITCH/1987/Standard ISO');
+    assert.ok(t, 'no token section');
+    deepEq((t.tokens || t).map(x => x.id), ['B4'], 'the token in DE 63');
+  }));
+
   test('generate tokens: only DE 63 / 126 of an ISO class offer the Token buffer; the class type decides where it goes', () => withTok(() => {
     run('S.ddlTree.SWITCH = { 1987: { "Standard ISO": ISO8583_DDL } }; _ddlTreeVersion++;');
     sandbox.__item = { name: 'ISO', label: 'ISO 87', ddl_bindings: ['SWITCH/1987/Standard ISO'],
@@ -27117,6 +27133,272 @@ console.log('\nreview 2026-11-11 — critical fixes');
       S0.ddlTree = was.tree; S0.deOverrides = was.ov;
       setKv('up_ddl_tree', kvWas.t); setKv('de_overrides', kvWas.o);
     }
+  });
+}
+
+// ── Review 2026-11-11: the high findings, one regression case each ───────────
+console.log('\nreview 2026-11-11 — high fixes');
+{
+  const run = c => vm.runInContext(c, sandbox);
+  // Swap a top-level function for the length of one call, and always put it back.
+  const withFn = (name, fn, body) => {
+    sandbox.__orig = run(name); sandbox.__repl = fn;
+    run(`${name} = __repl`);
+    try { return body(); } finally { run(`${name} = __orig`); }
+  };
+
+  test('[REGRESSION] PACKED-DECIMAL is binary storage, not digits', () => {
+    // The label carries it as "PACKEDDECIMAL", which \bCOMP never matched: packed
+    // bytes were checked as ASCII digits and painted "content looks wrong".
+    eq(normalizeDataType('PIC 9(5) PACKEDDECIMAL'), 'B', 'the label the DDL doc builds');
+    eq(normalizeDataType('PIC S9(7) PACKED-DECIMAL'), 'B', 'as written in the DDL');
+    eq(validateFieldContent([0x12, 0x34, 0x5C], 'PIC 9(5) PACKEDDECIMAL'), true, 'packed bytes are not a content error');
+  });
+
+  test('[REGRESSION] a REDEFINES inside a group is found for the scoring skip-set', () => {
+    // redefTarget is the bare name ("A"), ids are qualified ("G.A"): nothing
+    // inside a group matched, so mixed-type overlays cost the right DDL points.
+    const defs = parseHPEDDL('DEF T.\n02 G.\n 03 A PIC X(4).\n 03 B REDEFINES A PIC 9(4).\n02 C PIC X(2).\n02 D REDEFINES C PIC 9(2).\nEND');
+    deepEq([...buildRedefSkipSet(defs)].sort(), ['C', 'G.A'], 'both overlays, the grouped one too');
+  });
+
+  test('[REGRESSION] the DDL editor\'s unsaved text outranks the saved copy when sizes are checked', () => {
+    // The buffer was ingested LAST and may only replace a 0-size entry, so the
+    // saved DEF won: growing A and a REDEFINES of a TYPE A field together was
+    // refused with a mismatch measured against the old A.
+    const S0 = run('S'), was = S0.ddlTree;
+    try {
+      S0.ddlTree = { V: { S1: { F: 'DEF A.\n02 F PIC X(10).\nEND\nDEF B.\n02 X TYPE A.\n02 Y REDEFINES X PIC X(10).\nEND' } } };
+      run('_ddlTreeVersion++');
+      const edited = 'DEF A.\n02 F PIC X(12).\nEND\nDEF B.\n02 X TYPE A.\n02 Y REDEFINES X PIC X(12).\nEND';
+      const reg = run('buildRepoTypeRegistry')(edited);
+      eq(reg.get('A'), 12, 'the size of A is the edited one');
+      deepEq(validateDDLErrors(edited, reg).errors, [], 'Save is not refused');
+      const sec = run('buildRepoSectionRegistry')(edited);
+      eq(sec.get('A')[0].pic, 'X(12)', 'TYPE * expands the edited items too');
+    } finally { S0.ddlTree = was; run('_ddlTreeVersion++'); }
+  });
+
+  test('[REGRESSION] the journal names the length encoding it used', () => {
+    // ctx.lenEnc is { enc, declared }; reading `.encoding` always fell through to
+    // "the spec encoding".
+    assert.ok(/read as \$\{lType \|\| ctx\.lenEnc\?\.enc \|\| 'the spec encoding'\}/.test(APP_SRC), 'the journal reads a field that does not exist');
+  });
+
+  test('[REGRESSION] an ascii-hex TLV read from the cursor moves it over the TEXT', () => {
+    // Each decoded byte is two characters on the wire; the cursor advanced by
+    // the decoded count and the next read took the tail of the TLV as its data.
+    run('S').inputFormat = 'hex';
+    const ctx = meExecParseSpec({ ddl_bindings: [], parse_spec_binary: [
+      { 'read-tlv': { len: 2, tag_length: 1, length_length: 1, encoding: 'ascii-hex', tags: {} } },
+      { 'read-fixed': { length: 4, as: 'AFTER' } } ] }, Buffer.from('060A0141TAIL'));
+    eq(ctx.fields.find(f => f.id === 'TLV.0A')?.value, 'A', 'the tag');
+    eq(ctx.fields.find(f => f.id === 'AFTER')?.value, 'TAIL', 'the next read starts after the TLV text');
+  });
+
+  test('[REGRESSION] a deferred record whose picker was declined is shown, not dropped', () => {
+    // Only the first two got the "no matching DDL" placeholder; every later one
+    // returned null and vanished while the counter still counted it.
+    const saved = run('_lazySessionMappings');
+    try {
+      run('_lazySessionMappings = {}');
+      const d = { msgType: { type: 'ISO' }, bytes: [1, 2], chunkStr: 'xx', chunk: { recNo: 7, source: 'S', dest: 'D' },
+                  allMatches: [{ ddlPath: 'A/B/C' }], diag: { why: 'test' }, byteCharMap: [], charStart: 0 };
+      const m = run('_lazyBuildMsg')(d);
+      assert.ok(m, 'the record was dropped');
+      eq(m.noMatchDDL, true, 'it says there was no matching DDL');
+      eq(m.recNo, 7, 'and is the record it came from');
+      eq(m._diag.candidates, 1, 'with the diagnosis');
+    } finally { sandbox.__s = saved; run('_lazySessionMappings = __s'); }
+  });
+
+  test('[REGRESSION] the audit badge is detected on the raw bytes, with source and destination', () => {
+    // It was detected on the EBCDIC-translated peek with no context, so an EBCDIC
+    // recognizer or a Source/Destination one never matched there.
+    const seen = [];
+    sandbox.__spy = (buf, ctx) => { seen.push({ b0: buf[0], ctx }); return null; };
+    const was = sandbox._fmtDetect;
+    sandbox._fmtDetect = sandbox.__spy;
+    try {
+      auditBadgeType('F0F2F0F0', 10, { source: 'PIA^C910', dest: 'SW' });
+    } finally { sandbox._fmtDetect = was; }
+    eq(seen[0].b0, 0xF0, 'the raw byte reached detection');
+    eq(seen[0].ctx.source, 'PIA^C910', 'the record context reached detection');
+  });
+
+  test('[REGRESSION] Export and select-all act on the rows the filter shows', () => {
+    // The filter only hides rows; Export took every checked row — and every row
+    // starts checked — so filtering to three exported the whole log.
+    const mk = (idx, shown, checked) => {
+      const tr = { style: { display: shown ? '' : 'none' }, classList: { toggle() {} } };
+      return { dataset: { idx: String(idx) }, checked, closest: () => tr };
+    };
+    const rows = [mk(0, true, true), mk(1, false, true), mk(2, true, false)];
+    const exported = [];
+    domElStore.set('querySelectorAll', sel => sel === '.exp-chk' ? rows : []);
+    try {
+      withFn('_expMsgLines', (m, idx) => { exported.push(idx); return []; }, () => run('doMsgExport')());
+      deepEq(exported, [0], 'a hidden row was exported');
+      run('expToggleAll')(false);
+      deepEq(rows.map(r => r.checked), [false, true, false], 'select-all reached a hidden row');
+    } finally { domElStore.delete('querySelectorAll'); }
+  });
+
+  test('[REGRESSION] renaming a DDL takes its DE overrides, exclusion and armed override with it', () => {
+    // Rename moved only the tree node; everything keyed by path kept the old
+    // path. Delete left it all behind for the next file of that name.
+    const S0 = run('S'), was = { ov: S0.deOverrides, ex: S0.excl, po: S0.parseOverride, te: S0.treeExp };
+    const kvOv = run("_kvGet('de_overrides')"), kvEx = run("_kvGet('up_excl')");
+    try {
+      S0.deOverrides = { 'V/S/F/A': { '0': 7 }, 'V/S/G/A': { '1': 2 } };
+      S0.excl = new Set(['V/S/F', 'V/S/G/A']);
+      S0.parseOverride = { type: 'def', vol: 'V', sv: 'S', name: 'F', defName: 'A' };
+      S0.treeExp = new Set(['V', 'V/S']);
+      run('_movePathState')(['V', 'S', 'F'], ['V', 'S', 'NEWF']);
+      deepEq(Object.keys(S0.deOverrides).sort(), ['V/S/G/A', 'V/S/NEWF/A'], 'the overrides follow the file');
+      deepEq([...S0.excl].sort(), ['V/S/G/A', 'V/S/NEWF'], 'so does the exclusion');
+      eq(S0.parseOverride.name, 'NEWF', 'and the armed override');
+      eq(JSON.parse(run("_kvGet('de_overrides')"))['V/S/NEWF/A']['0'], 7, 'stored under the new path');
+      run('_movePathState')(['V', 'S'], ['V', 'S2']);
+      eq(S0.parseOverride.sv, 'S2', 'renaming the subvolume carries it');
+      run('_movePathState')(['V', 'S2', 'NEWF'], null);
+      deepEq(Object.keys(S0.deOverrides), ['V/S2/G/A'], 'deleting drops the file\'s overrides');
+      deepEq([...S0.excl], ['V/S2/G/A'], 'and its exclusion');
+      eq(S0.parseOverride, null, 'and disarms it');
+      for (const fn of ['ctxRenameVol', 'ctxRenameSv', 'ctxRenameDdl', 'deleteScope'])
+        assert.ok(/_movePathState\(/.test(psFnSource(fn)), `${fn} leaves the path-keyed state behind`);
+    } finally {
+      Object.assign(S0, { deOverrides: was.ov, excl: was.ex, parseOverride: was.po, treeExp: was.te });
+      sandbox.__a = kvOv; sandbox.__b = kvEx;
+      run(kvOv == null ? "delete _appKV['de_overrides']" : "_appKV['de_overrides'] = __a");
+      run(kvEx == null ? "delete _appKV['up_excl']" : "_appKV['up_excl'] = __b");
+    }
+  });
+
+  test('[REGRESSION] with an import pending, saving DE overrides keeps the import\'s out', () => {
+    const S0 = run('S'), was = S0.deOverrides, kv = run("_kvGet('de_overrides')");
+    try {
+      sandbox.__s = JSON.stringify({ 'V/S/F/A': { '0': 1 } });
+      run("_appKV['de_overrides'] = __s");
+      S0.deOverrides = { 'V/S/F/A': { '0': 9 }, 'V/S/NEW/A': { '0': 3 }, 'V/S/MINE/A': { '0': 4 } };
+      run('_pendingImport = { deOverrides: { "V/S/F/A": {}, "V/S/NEW/A": {} } }');
+      run('saveDeOverrides()');
+      deepEq(JSON.parse(run("_kvGet('de_overrides')")), { 'V/S/F/A': { '0': 1 }, 'V/S/MINE/A': { '0': 4 } },
+        'stored: the old value back, the new one absent, the user\'s own kept');
+    } finally {
+      run('_pendingImport = null'); S0.deOverrides = was;
+      sandbox.__k = kv; run(kv == null ? "delete _appKV['de_overrides']" : "_appKV['de_overrides'] = __k");
+    }
+  });
+
+  test('[REGRESSION] deleting a class above the selected one keeps the selection on the same class', () => {
+    // selIdx stayed put, so the editor jumped to the next class and an open
+    // business rule was then applied to THAT class.
+    const st = meState();
+    const A = { name: 'A', label: 'A' }, B = { name: 'B', label: 'B' }, C = { name: 'C', label: 'C', rules: [] };
+    try {
+      setMeState({ specs: [A, B, C], selIdx: 2, section: 'msg', editRule: 0, rulePend: { x: 1 }, sections: {}, testResults: { results: [] } });
+      withFn('confirmDelete', (msg, ok) => ok(), () => run('_meDeleteItem')('msg', 0));
+      eq(meState().specs[meState().selIdx], C, 'C is still the selected class');
+      deepEq(meState().rulePend, { x: 1 }, 'its open rule is still its own');
+      eq(meState().testResults, null, 'the index-keyed Test verdicts are dropped');
+      withFn('confirmDelete', (msg, ok) => ok(), () => run('_meDeleteItem')('msg', meState().selIdx));
+      eq(meState().rulePend, null, 'deleting the selected class closes its rule');
+      eq(meState().editRule, -1, 'and the rule editor');
+    } finally { setMeState(st); }
+  });
+
+  test('[REGRESSION] the DE picker opens on "number" for a field with a numeric anchor', () => {
+    // It opened on "include", so Apply with nothing changed replaced the anchor
+    // with `true` and renumbered every DE after it.
+    for (const [de, want] of [[65, 'number'], ['12', 'number'], [true, 'include'], [false, 'exclude'], ['children', 'children'], [undefined, 'include']])
+      eq(withFn('_meFmSelOvr', () => ({ de }), () => run('_ME_FM_ED').de.def()), want, `de = ${JSON.stringify(de)}`);
+  });
+
+  test('[REGRESSION] the Field Map multi-selection is re-applied whenever the window is rebuilt', () => {
+    // Only the single selection is baked into the row HTML; rows rebuilt on
+    // scroll lost the multi-selection while the action bar still used it.
+    const w = psFnSource('_meFmRenderWindow');
+    assert.ok(/_meFmSyncMultiClasses\(\);/.test(w.slice(w.indexOf('v.tbody.innerHTML = html;'))),
+      'the rebuilt rows never get the multi-selection back');
+  });
+
+  test('[REGRESSION] a Test row highlights ITS bytes when ids repeat', () => {
+    // The lookup was by id, so every later occurrence lit the first one's bytes.
+    const saved = run('({ f: _meTestFields, m: _meTestByteMap, s: _meTestSelFid, h: _meTestHovFid })');
+    try {
+      run(`_meTestFields = [{ id: 'X', startByte: 0, endByte: 0 }, { id: 'X', startByte: 2, endByte: 2 }];
+           _meTestByteMap = [{ s: 0, e: 2 }, { s: 3, e: 5 }, { s: 6, e: 8 }];
+           _meTestSelFid = '1'; _meTestHovFid = null;`);
+      const r = run('_meTestHLRanges()');
+      eq(r[0].s, 6, 'the second X lights byte 2, not byte 0');
+      const html = run('_meTestFieldTable(_meTestFields)');
+      assert.ok(/data-fidx="0"[\s\S]*data-fidx="1"/.test(html), 'rows carry their position');
+      const runTest = psFnSource('_meRunTest');
+      assert.ok(runTest.indexOf('_meTestFields = ctx.fields') < runTest.indexOf('_meTestFieldTable(ctx.fields)'),
+        'the table is built before the fields it indexes are set');
+    } finally {
+      sandbox.__sv = saved;
+      run('_meTestFields = __sv.f; _meTestByteMap = __sv.m; _meTestSelFid = __sv.s; _meTestHovFid = __sv.h;');
+    }
+  });
+
+  test('[REGRESSION] mounting a parse spec starts with no error or lint from the previous one', () => {
+    // Module-level state: class B showed class A's JSON error and red line, and
+    // A's debounced lint could land in B's bar after the switch.
+    run(`_mePsErrMsg = 'Unexpected token'; _mePsErrLine = 7; _mePsLintMsgs = [{ msg: 'old' }]; _mePsInertMsgs = new Map([[0, 'x']]);`);
+    run('_mePsMountCM')({ name: 'B' });
+    eq(run('_mePsErrMsg'), '', 'the old error');
+    eq(run('_mePsErrLine'), null, 'the old error line');
+    eq(run('_mePsLintMsgs').length, 0, 'the old lint');
+    eq(run('_mePsInertMsgs').size, 0, 'the old ignored-block marks');
+    assert.ok(/clearTimeout\(_mePsLintTimer\)/.test(psFnSource('_mePsMountCM')), 'a pending lint from the old spec still fires');
+    const ch = psFnSource('_mePsChange');
+    assert.ok(/catch\(e\) \{[\s\S]*clearTimeout\(_mePsLintTimer\)/.test(ch), 'a lint of the last valid text fires behind the syntax error');
+  });
+
+  test('[REGRESSION] reordering classes drops the index-keyed Test verdicts', () => {
+    const st = meState();
+    const e = { preventDefault() {}, clientY: 0,
+                currentTarget: { classList: { remove() {} }, getBoundingClientRect: () => ({ top: 0, height: 10 }) } };
+    try {
+      setMeState({ specs: [{ name: 'A' }, { name: 'B' }, { name: 'C' }], selIdx: 0, section: 'msg', sections: {},
+                   _dragSpecIdx: 0, testResults: { results: [1, 2, 3], winnerIdx: 0 } });
+      run('_meSpecDrop')(e, 2);
+      eq(meState().testResults, null, 'WINS stays on the slot, not the class');
+      meState().testResults = { results: [] }; meState()._dragSpecIdx = 0;
+      run('_meSpecDropOnList')('other');
+      eq(meState().testResults, null, 'nor when dropped on a list');
+    } finally { setMeState(st); }
+  });
+
+  test('[REGRESSION] a business rule "equals" compares the whole value, commas included', () => {
+    // The value was split on commas and only the first item compared.
+    const holds = (value, have) => run('_meTagCondHolds')({ field: 'F', op: 'equals', value }, { F: { value: have } });
+    eq(holds('A,B', 'A'), false, '"A,B" matched a field holding A');
+    eq(holds('A,B', 'A,B'), true, 'a value with a comma never matched');
+    eq(holds(' a ', 'A'), true, 'still trimmed and case-insensitive');
+    eq(run('_meTagCondHolds')({ field: 'F', op: 'one-of', value: 'A,B' }, { F: { value: 'B' } }), true, 'one-of is still a list');
+  });
+
+  test('[REGRESSION] a new length recognizer starts at 1 byte and never stores 0', () => {
+    // nf's third argument is the MIN; the box opened at 0, and `?? 1` never
+    // caught a 0, so a new rule was stored with length 0.
+    const st = meState();
+    try {
+      setMeState({ specs: [{ name: 'A', recognizers: [] }], selIdx: 0, sections: {} });
+      assert.ok(/id="me-rv-length-0" value="1"/.test(run('_meRecFields')({ type: 'ascii' }, 0)), 'the box opens at 0');
+    } finally { setMeState(st); }
+    const ids = { 'me-rt-0': { value: 'ascii' }, 'me-rv-offset-0': { value: '0' }, 'me-rv-length-0': { value: '0' }, 'me-rv-id-0': { value: '' } };
+    const saved = {};
+    for (const k in ids) { saved[k] = elStubs[k]; elStubs[k] = ids[k]; }
+    try {
+      eq(run('_meRecRead')(0).length, 1, 'a 0 typed is stored as 1');
+      elStubs['me-rt-0'] = { value: 'numeric' };
+      eq(run('_meRecRead')(0).length, 1, 'numeric too');
+      elStubs['me-rt-0'] = { value: 'hex-density' };
+      eq(run('_meRecRead')(0).length, 1, 'hex-density too');
+    } finally { for (const k in saved) { if (saved[k] === undefined) delete elStubs[k]; else elStubs[k] = saved[k]; } }
   });
 }
 // ── Summary ───────────────────────────────────────────────────────────────────

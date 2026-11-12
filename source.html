@@ -6725,8 +6725,12 @@ function _ddlDefsWithoutItems(strippedLines) {
 function normalizeDataType(dt) {
   if (!dt) return null;
   const u = dt.trim().toUpperCase();
-  // Binary storage (COMP / COMPUTATIONAL / COMP-3 / BINARY) is not ASCII text — skip byte checks
-  if (/\bCOMP/.test(u) || /^BINARY/.test(u)) return 'B';
+  // Binary storage (COMP / COMPUTATIONAL / COMP-3 / PACKED-DECIMAL / BINARY) is not
+  // ASCII text — skip byte checks. PACKED-DECIMAL is COMP-3 by another name; the
+  // label carries it as "PACKEDDECIMAL", which \bCOMP never matched, so packed
+  // bytes were checked as digits, painted "content looks wrong" and cost the
+  // right DDL points in scoring.
+  if (/\bCOMP|\bPACKED/.test(u) || /^BINARY/.test(u)) return 'B';
   if (/^PIC\s*N/.test(u))            return 'NAT';   // national (2-byte) — recognised, not byte-validated
   // Signed DISPLAY numeric — separate sign (S) or embedded sign (T)
   if (/^PIC/.test(u) && /[ST]/.test(u.replace(/^PIC(?:TURE)?\s*/, ''))) return 'SN';
@@ -6831,8 +6835,13 @@ function buildRedefSkipSet(defs) {
   for (const d of defs) {
     if (!d.isRedefines || !d.redefTarget) continue;
     const nt = normalizeDataType(d._dataType || d.dataType);
-    if (!redefTypeMap.has(d.redefTarget)) redefTypeMap.set(d.redefTarget, []);
-    redefTypeMap.get(d.redefTarget).push(nt);
+    // redefTarget is the BARE name ("A"); ids are qualified ("G.A"). The target
+    // is a sibling, so it shares this field's parent prefix — matched as written,
+    // nothing inside a group was ever found and only top-level REDEFINES counted.
+    const id = String(d.id || '');
+    const baseId = id.slice(0, id.lastIndexOf('.') + 1) + d.redefTarget;
+    if (!redefTypeMap.has(baseId)) redefTypeMap.set(baseId, []);
+    redefTypeMap.get(baseId).push(nt);
   }
   for (const [baseId, redefTypes] of redefTypeMap) {
     const baseDef = defs.find(d => d.id === baseId && !d.isRedefines);
@@ -7309,6 +7318,12 @@ function buildRepoTypeRegistry(extraContent) {
     }
   }
 
+  // The editor buffer FIRST: it is the newer text, and ingest never replaces a
+  // sized entry. Read last, the saved copy of a DEF beat the unsaved edit — grow
+  // DEF A and a REDEFINES of a TYPE A field in one go, and Save was refused with a
+  // size mismatch measured against the OLD A.
+  if (extraContent) ingest(extraContent);
+
   // Scan every DDL in the repository
   const _t = _ddlTreeRead();
   for (const vol of Object.keys(_t)) {
@@ -7318,9 +7333,6 @@ function buildRepoTypeRegistry(extraContent) {
       }
     }
   }
-
-  // Also ingest the current editor buffer (may not be saved yet)
-  if (extraContent) ingest(extraContent);
 
   if (!extraContent) _repoTypeRegCache = { version: _tv, reg };
   return reg;
@@ -7343,6 +7355,8 @@ function buildRepoSectionRegistry(extraContent) {
     }
   }
 
+  // Editor buffer first, for the same reason as the type registry: first wins.
+  if (extraContent) ingest(extraContent);
   const _t = _ddlTreeRead();
   for (const vol of Object.keys(_t)) {
     for (const sv of Object.keys(_t[vol] || {})) {
@@ -7352,7 +7366,6 @@ function buildRepoSectionRegistry(extraContent) {
     }
   }
 
-  if (extraContent) ingest(extraContent);
   if (!extraContent) _repoSecRegCache = { version: _tv, reg };
   return reg;
 }
@@ -8264,8 +8277,15 @@ function closeSpec() {
   document.getElementById('specOverlay').classList.add('hidden');
 }
 
+// The rows the filter leaves visible. The filter only hides rows, so select-all
+// and Export acted on every message: filter to three, press Export, and the
+// whole log came out — every row starts checked.
+function _expShownChks() {
+  return [...document.querySelectorAll('.exp-chk')].filter(cb => cb.closest('tr').style.display !== 'none');
+}
+
 function expToggleAll(checked) {
-  document.querySelectorAll('.exp-chk').forEach(cb => {
+  _expShownChks().forEach(cb => {
     cb.checked = checked;
     cb.closest('tr').classList.toggle('exp-sel', checked);
   });
@@ -8273,8 +8293,8 @@ function expToggleAll(checked) {
 
 function expRowChange(cb) {
   cb.closest('tr').classList.toggle('exp-sel', cb.checked);
-  const all = [...document.querySelectorAll('.exp-chk')];
-  document.getElementById('expSelAll').checked = all.every(c => c.checked);
+  const all = _expShownChks();
+  document.getElementById('expSelAll').checked = all.length > 0 && all.every(c => c.checked);
 }
 
 function filterExpTable() {
@@ -8435,7 +8455,7 @@ function _expMsgLines(msg, idx) {
 }
 
 function doMsgExport() {
-  const selected = [...document.querySelectorAll('.exp-chk')]
+  const selected = _expShownChks()
     .filter(cb => cb.checked)
     .map(cb => parseInt(cb.dataset.idx));
 
@@ -9626,8 +9646,14 @@ function extractTokensFromMessage(fields, bytes, msgTypeStr, ddlPath) {
     // either. And an ISO LLVAR / LLLVAR's startByte is its length prefix, not
     // its data: the area starts where the DE's bytes do, counted back from its
     // end. Both made a token-area block find nothing in DE 63 / 126.
-    const dataOf = f => f.rawBytes?.length ? f.rawBytes
-      : f.rawHex ? (String(f.rawHex).replace(/\s+/g, '').match(/../g) || []).map(h => parseInt(h, 16)) : [];
+    // The DATA is the last valueLength bytes: the simple ISO parser keeps the
+    // LL / LLL prefix in rawBytes, so the eyecatcher test read a length digit
+    // and that parser never showed a token section.
+    const dataOf = f => {
+      const all = f.rawBytes?.length ? f.rawBytes
+        : f.rawHex ? (String(f.rawHex).replace(/\s+/g, '').match(/../g) || []).map(h => parseInt(h, 16)) : [];
+      return (f.valueLength != null && all.length > f.valueLength) ? all.slice(all.length - f.valueLength) : all;
+    };
     const tkField = fields.find(f => {
       if (!(f.id === '63' || f.id === '126' || f.deNum === 63 || f.deNum === 126)) return false;
       const d = dataOf(f);
@@ -17382,7 +17408,7 @@ function _auditDecodePeek(payPeekHex) {
 //     so those rules judge the record rather than the sample. Bytes past the
 //     peek stay zero: a recognizer that reads there cannot be decided from a
 //     peek, and answering "no" is the honest result.
-function _auditBadgeType(payPeekHex, recLength) {
+function _auditBadgeType(payPeekHex, recLength, ctx) {
   if (!payPeekHex || payPeekHex.length < 4) return null;
   const peek = [];
   for (let i = 0; i + 1 < payPeekHex.length; i += 2)
@@ -17390,7 +17416,7 @@ function _auditBadgeType(payPeekHex, recLength) {
   if (!peek.length) return null;
   const buf = new Uint8Array(Math.max(peek.length, +recLength || 0));
   buf.set(peek, 0);
-  const w = (typeof _fmtDetect === 'function') ? _fmtDetect(buf, null) : null;
+  const w = (typeof _fmtDetect === 'function') ? _fmtDetect(buf, ctx || null) : null;
   return w ? { type: w.type, color: w.color || '' } : null;
 }
 
@@ -17739,7 +17765,12 @@ function auditApplyFilter() {
 
 function _auditBuildRowHtml(r, absIdx) {
   const peek  = _auditDecodePeek(r.payloadPeek);
-  const badge = _auditBadgeType(peek, r.messageLen);
+  // Detected the way the parse detects: on the RAW bytes, with the record's
+  // source and destination. The EBCDIC-translated peek is for the preview only —
+  // a class with an EBCDIC recognizer could never match it, and with no context
+  // a Source/Destination recognizer always refused, so the badge disagreed with
+  // the class the parse then reported.
+  const badge = _auditBadgeType(r.payloadPeek, r.messageLen, { source: r.source, dest: r.dest });
   // Colour comes from the class itself, not from a lookup keyed on the type
   // name — that lookup only had entries for the five legacy names, so a renamed
   // class got no colour of its own.
@@ -18551,13 +18582,21 @@ function _auditLazyParseNext() {
   if (!msg) { if (_lazyDeferredIdx < _lazyDeferreds.length) _auditLazyParseNext(); return; }
   S.messages.push(msg);
 }
-// One deferred record as a message, or null when its type's picker was declined.
-// Built once: Follow may build it ahead of navigation, and the message it found
-// must be the one navigation then shows.
+// One deferred record as a message. Built once: Follow may build it ahead of
+// navigation, and the message it found must be the one navigation then shows.
 function _lazyBuildMsg(d) {
   if (d._built) return d._built;
   const sm = _lazySessionMappings?.[d.msgType.type];
-  if (!sm) return null;
+  // Declined picker: the record is RENDERED as "no matching DDL", exactly as
+  // _applyDeferreds does for the first two — never dropped. Returning null here
+  // skipped every deferred record after the second while the counter still
+  // counted them, so Next walked past the end of S.messages.
+  if (!sm) return (d._built = { bytes: d.bytes, raw: d.chunkStr, timestamp: d.chunk.timestamp || null,
+    fields: [], ddlPath: null, msgType: d.msgType, tokens: [],
+    byteCharMap: d.byteCharMap, charStart: d.charStart, charEnd: d.charStart + d.chunkStr.length,
+    noMatchDDL: true, _diag: { ...(d.diag || {}), candidates: (d.allMatches || []).length },
+    isNetard: true, recNo: d.chunk.recNo, source: d.chunk.source, dest: d.chunk.dest,
+    recLength: d.chunk.recLength, time: d.chunk.time });
   const chosen = d.allMatches.find(m => m.ddlPath === sm.ddlPath && m.defName === sm.defName) || d.allMatches[0];
   const cand   = _lazyAllCompiled?.find(c => c.path === chosen.ddlPath && (c.defName ?? null) === (chosen.defName ?? null));
   let fields = [], ddlPath = chosen.ddlPath, defName = chosen.defName;
@@ -20776,7 +20815,67 @@ function applyDEOverrides(layout, overrides) {
 }
 function saveDeOverrides() {
   _deOvrVersion++;   // invalidate the getDDLFromPath compile cache
-  _kvSet('de_overrides', JSON.stringify(S.deOverrides));
+  _kvSet('de_overrides', JSON.stringify(_deOvForStorage()));
+}
+// While an import is pending its overrides stay out of storage, whoever saves —
+// as _treeForStorage does for its DDLs. Each pending key is written as storage
+// held it: its old value, or absent.
+function _deOvForStorage() {
+  const imp = typeof _pendingImport !== 'undefined' ? _pendingImport : null;
+  const pend = imp && imp.deOverrides ? Object.keys(imp.deOverrides) : [];
+  if (!pend.length) return S.deOverrides;
+  let stored = {};
+  try { stored = JSON.parse(_kvGet('de_overrides') || '{}') || {}; } catch(e) {}
+  const out = { ...S.deOverrides };
+  for (const k of pend) { if (k in stored) out[k] = stored[k]; else delete out[k]; }
+  return out;
+}
+
+// ── Path-keyed state follows a rename, and goes with a delete ──────────────
+// DE overrides, exclusions, the armed DDL override and the open tree nodes are
+// all keyed by PATH. Rename only moved the tree node, so a renamed file's DE
+// overrides silently stopped applying and its exclusion was lost; a deleted one
+// left them behind, and a new file of the same name inherited them.
+// `from` / `to` are path parts, e.g. ['VOL','SV','FILE']; `to` null = drop.
+function _movePathState(from, to) {
+  const up = a => a.join('/').toUpperCase();
+  const oldK = up(from), newK = to ? up(to) : null;
+  const moveKey = k => (k === oldK || k.startsWith(oldK + '/'))
+    ? (newK == null ? null : newK + k.slice(oldK.length)) : k;
+  let ovMoved = false;
+  for (const k of Object.keys(S.deOverrides || {})) {
+    const nk = moveKey(k.toUpperCase());
+    if (nk === k.toUpperCase()) continue;
+    const v = S.deOverrides[k]; delete S.deOverrides[k];
+    if (nk != null) S.deOverrides[nk] = v;
+    ovMoved = true;
+  }
+  if (ovMoved) saveDeOverrides();
+  let exMoved = false;
+  const ex = new Set();
+  for (const k of S.excl) {
+    const nk = moveKey(String(k).toUpperCase());
+    if (nk !== String(k).toUpperCase()) exMoved = true;
+    if (nk != null) ex.add(nk === String(k).toUpperCase() ? k : nk);
+  }
+  if (exMoved) { S.excl = ex; saveExcl(); }
+  const o = S.parseOverride;
+  if (o) {
+    const parts = [o.vol, o.sv, o.name, o.defName].filter(Boolean);
+    const nk = moveKey(up(parts));
+    if (nk == null) S.parseOverride = null;
+    else if (nk !== up(parts)) {
+      // Rename keeps the casing the user typed for the parts that moved.
+      const keep = parts.slice(from.length);
+      const np = [...to, ...keep];
+      S.parseOverride = { ...o, vol: np[0], sv: np[1] || null, name: np[2] || null, defName: np[3] || o.defName || null };
+    }
+  }
+  // Open nodes are stored in the tree's own casing, not upper-cased.
+  const oldE = from.join('/'), newE = to ? to.join('/') : null;
+  for (const k of [...S.treeExp]) {
+    if (k.startsWith(oldE + '/')) { S.treeExp.delete(k); if (newE != null) S.treeExp.add(newE + k.slice(oldE.length)); }
+  }
 }
 function loadDeOverrides() {
   try { const s = _kvGet('de_overrides'); if (s) { S.deOverrides = JSON.parse(s); _deOvrVersion++; } } catch(e) {}
@@ -21040,6 +21139,7 @@ function deleteScope() {
     if      (sc.type === 'vol') { delete S.ddlTree[sc.vol]; S.treeExp.delete(sc.vol); }
     else if (sc.type === 'sv')  { delete S.ddlTree[sc.vol][sc.sv]; S.treeExp.delete(`${sc.vol}/${sc.sv}`); }
     else                        { delete S.ddlTree[sc.vol][sc.sv][sc.name]; }
+    _movePathState(sc.type === 'vol' ? [sc.vol] : sc.type === 'sv' ? [sc.vol, sc.sv] : [sc.vol, sc.sv, sc.name], null);
     S.scope = null;
     S.editorBaseline = null;
     document.getElementById('ddlEditor').value = '';
@@ -21260,6 +21360,7 @@ function ctxRenameVol(vol) {
     delete S.ddlTree[vol];
     if (S.treeExp.has(vol)) { S.treeExp.delete(vol); S.treeExp.add(newName); }
     if (S.scope?.vol === vol) S.scope.vol = newName;
+    _movePathState([vol], [newName]);
     saveTree(); buildUnresolvedRefs(); renderDDLTree();
     flash(`Renamed to "${newName}"`);
   });
@@ -21274,6 +21375,7 @@ function ctxRenameSv(vol, sv) {
     const oldKey = `${vol}/${sv}`, newKey = `${vol}/${newName}`;
     if (S.treeExp.has(oldKey)) { S.treeExp.delete(oldKey); S.treeExp.add(newKey); }
     if (S.scope?.vol === vol && S.scope?.sv === sv) S.scope.sv = newName;
+    _movePathState([vol, sv], [vol, newName]);
     saveTree(); buildUnresolvedRefs(); renderDDLTree();
     flash(`Renamed to "${newName}"`);
   });
@@ -21287,6 +21389,7 @@ function ctxRenameDdl(vol, sv, name) {
     delete S.ddlTree[vol][sv][name];
     if ((S.scope?.type === 'ddl' || S.scope?.type === 'def') && S.scope.vol === vol && S.scope.sv === sv && S.scope.name === name)
       S.scope.name = newName;
+    _movePathState([vol, sv, name], [vol, sv, newName]);
     saveTree(); buildUnresolvedRefs(); selectScope('ddl', vol, sv, newName);
     flash(`Renamed to "${newName}"`);
   });
@@ -22439,7 +22542,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.64.6.4';
+const APP_VERSION  = '1.64.7.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -25775,6 +25878,10 @@ function _meSpecDrop(e, targetIdx) {
       else if (src > _meState.selIdx && dst <= _meState.selIdx) _meState.selIdx++;
     }
   }
+  // The Test verdicts are keyed by array index, and order IS detection order:
+  // left in place, WINS and the pass/fail colours sat on whichever classes now
+  // held those slots, and the real winner may have changed. Run Test again.
+  _meState.testResults = null;
   _meSetDirty();
   _meRenderSidebar();
 }
@@ -25810,6 +25917,7 @@ function _meSpecDropOnList(kind) {
       else if (src < _meState.selIdx) _meState.selIdx--;
     }
   }
+  _meState.testResults = null;   // keyed by index, and the order moved (see _meSpecDrop)
   _meSetDirty();
   _meRenderSidebar();
 }
@@ -28734,6 +28842,9 @@ function _mePsChange(val) {
     // header and an amber band in the editor, both describing a spec that no
     // longer parses — stale claims about text that had since changed.
     // Reported 2026-09-15.
+    // And the lint still pending from the last VALID text is cancelled: firing
+    // 350 ms later it refilled the list from the old parse, behind the error.
+    clearTimeout(_mePsLintTimer);
     _mePsLintMsgs = [];
     _mePsInertMsgs = new Map();
     _mePsSetErr(e.message);
@@ -29937,6 +30048,13 @@ function _mePsSyncUndoBtns() {
 
 function _mePsMountCM(item) {
   _mePsUnmountCM();
+  // The error, the lint and a lint still pending all describe the spec that was
+  // mounted BEFORE. Left alone, class B showed class A's JSON error (and a red
+  // line at A's error line in B's valid spec), or A's warnings landed in B's bar
+  // when A's debounced lint fired after the switch.
+  clearTimeout(_mePsLintTimer);
+  _mePsErrMsg = ''; _mePsErrLine = null;
+  _mePsLintMsgs = []; _mePsInertMsgs = new Map();
   const host = document.getElementById('me-ps-ta-host');
   if (!host || !window.CM || !item) return null;
   const { EditorView, EditorState, history, keymap, defaultKeymap, historyKeymap, placeholder, lineNumbers, highlightActiveLine, highlightActiveLineGutter } = window.CM;
@@ -31375,6 +31493,10 @@ function _meFmRenderWindow(force) {
   // Row selection is baked into the row HTML, but the column highlight is a
   // class on individual cells — it has to be re-applied to each new window.
   if (_meFmColHiCur()) _meFmApplyColHighlight(_meFmColHiCur());
+  // So is the MULTI-selection: rows rebuilt by the window lost it, so a
+  // Shift-selected range looked gone after a scroll while the action bar still
+  // acted on every field in it.
+  _meFmSyncMultiClasses();
 }
 
 // Refresh the virtual list from a (re)computed field list — used after DE
@@ -33415,10 +33537,13 @@ const _ME_FM_ED = {
   // only option needing a value, so it hands off to the de-anchor editor
   // rather than making every other choice carry an unused number box.
   'de':        { label: 'Data element', kind: 'sel',
+                 // A numeric anchor opens on "number" (its value in the box). It
+                 // opened on "include", so Apply with nothing changed replaced the
+                 // anchor with `true` and every DE after it renumbered.
                  def: () => { const o = _meFmSelOvr();
                               return o?.de === false ? 'exclude'
                                    : o?.de === 'children' ? 'children'
-                                   : o?.de === true ? 'include' : 'include'; },
+                                   : _meDeIsAnchor(o?.de) ? 'number' : 'include'; },
                  opts: () => ['include', 'exclude', 'children', 'number'],
                  // Picking "number…" reveals the box next to the picker. It used
                  // to open a second editor on Apply, which asked for the number
@@ -36067,12 +36192,12 @@ function _meRecFields(r, id) {
     case 'binary':
     case 'ascii':
     case 'ebcdic':
-      return offF() + nf('length','Length',1);
+      return offF() + nf('length','Length',1,null,1);
     case 'numeric':
     case 'alphabetic':
     case 'alphanumeric': {
       const enc = r.encoding || 'ascii';
-      return offF() + encSel('encoding',['ascii','ebcdic'],enc) + nf('length','Length',1);
+      return offF() + encSel('encoding',['ascii','ebcdic'],enc) + nf('length','Length',1,null,1);
     }
     case 'uint8': case 'byte': {
       const onf = (k,lbl,mn,mx) => { const v=r[k]; return `<div class="me-rf-fld"><div class="me-lbl">${lbl}</div>
@@ -36118,7 +36243,7 @@ function _meRecFields(r, id) {
       return tf('pattern','Pattern','JavaScript regex');
     case 'hex-density': case 'oct-density': {
       const enc = r.encoding || 'ascii';
-      return offF() + nf('length','Length',1) +
+      return offF() + nf('length','Length',1,null,1) +
         `<div class="me-rf-fld"><div class="me-lbl">Min (0.0–1.0)</div>
          <input class="me-inp" style="width:72px" type="number" step="0.01" min="0" max="1"
            id="me-rv-min-${id}" value="${ea(r.min != null ? r.min : 0.8)}"></div>` +
@@ -36181,10 +36306,13 @@ function _meRecRead(idx) {
     }
     case 'binary':
     case 'ascii':
-    case 'ebcdic':        return { type, offset: ni('offset'), length: ni('length') ?? 1, ...r_id };
+    // Length is at least 1 byte. The box used to open at 0 (the 1 passed to it
+    // was its MIN, not its default) and `?? 1` never caught a 0, so a new
+    // recognizer was stored with length 0 — while the summary described 1 byte.
+    case 'ebcdic':        return { type, offset: ni('offset'), length: Math.max(1, ni('length', 1)), ...r_id };
     case 'numeric':
     case 'alphabetic':
-    case 'alphanumeric':  return { type, offset: ni('offset'), encoding: gv('encoding') || 'ascii', length: ni('length', 1), ...r_id };
+    case 'alphanumeric':  return { type, offset: ni('offset'), encoding: gv('encoding') || 'ascii', length: Math.max(1, ni('length', 1)), ...r_id };
     case 'uint8': case 'byte': {
       const oi = k => { const v=parseInt(gv(k)); return isNaN(v)?undefined:v; };
       const mk = gv('mask').trim()||undefined;
@@ -36209,7 +36337,7 @@ function _meRecRead(idx) {
     }
     case 'regex': return { type, pattern: gv('pattern'), ...r_id };
     case 'hex-density': case 'oct-density':
-      return { type, offset: ni('offset'), length: ni('length', 1), min: nf('min', 0.8), encoding: gv('encoding') || 'ascii', ...r_id };
+      return { type, offset: ni('offset'), length: Math.max(1, ni('length', 1)), min: nf('min', 0.8), encoding: gv('encoding') || 'ascii', ...r_id };
     case 'length-payload': case 'length-prefix': {
       const isEl = document.getElementById(`me-rv-includes_self-${idx}`);
       return { type: 'length-payload', offset: ni('offset'), encoding: gv('encoding') || 'uint16-be',
@@ -36463,8 +36591,17 @@ function _meDeleteItem(section, idx) {
   const kind = s?.kind === 'file' ? 'file detection' : s?.kind === 'other' ? 'structure' : 'message';
   confirmDelete(`the ${kind} "${itemName}" and everything in it`, () => {
     _meState.specs.splice(idx, 1);
-    if (_meState.section === 'msg')
-      _meState.selIdx = Math.min(_meState.selIdx, _meState.specs.length - 1);
+    // Deleting a class ABOVE the selected one moves the selected one up a slot.
+    // Left at its old index, the editor jumped to the next class — and a business
+    // rule open in the form was then applied to THAT class's rules.
+    const cur = _meState.selIdx;
+    if (idx < cur) _meState.selIdx = cur - 1;
+    else if (idx === cur) {
+      _meState.selIdx   = Math.min(cur, _meState.specs.length - 1);
+      _meState.editRule = -1;      // the open rule belonged to the class just deleted
+      _meState.rulePend = null;
+    }
+    _meState.testResults = null;   // keyed by index — every index after idx moved
     _meState.editRec = -1;
     _meState.pend    = {};
     _meSetDirty();
@@ -37700,7 +37837,13 @@ function _meTagCondHolds(cond, byId) {
     case 'not':    return !have.some(h => want.includes(h));
     case 'one-of': return have.some(h => want.includes(h));
     case 'starts-with': return have.some(h => want.some(w => h.startsWith(w)));
-    default:       return have.includes(want[0]);
+    // `equals` is ONE value, compared whole. It used the comma-split list and
+    // took its first item, so "A,B" matched a field holding "A" and a value with
+    // a comma in it could never match.
+    default: {
+      const raw = Array.isArray(cond.value) ? cond.value[0] : cond.value;
+      return have.includes(String(raw == null ? '' : raw).trim().toUpperCase());
+    }
   }
 }
 
@@ -39414,7 +39557,7 @@ function _meVlgReadGroup(groupId, kids, cfgLenId, ctx) {
   // that normally means the length was misread.
   const capacity  = dataDefs.reduce((t, d) => t + _meEffLen(d, ctx), 0);
   const available = ctx.bytes.length - (lStart + lLen);
-  _meStep(ctx, `${lenDef.id} at ${lStart}: ${lLen} byte(s) "${lValue}" read as ${lType || ctx.lenEnc?.encoding || 'the spec encoding'} = ${Nwritten ?? '?'}`
+  _meStep(ctx, `${lenDef.id} at ${lStart}: ${lLen} byte(s) "${lValue}" read as ${lType || ctx.lenEnc?.enc || 'the spec encoding'} = ${Nwritten ?? '?'}`
     + `${lenInChars ? ` digit(s) = ${N} byte(s)` : ' byte(s)'} of payload for ${dataDefs.map(d => d.id).join(', ')} (they declare ${capacity})`);
   if (N > available) {
     lenErrs.push(`${lenDef.id}: length ${Nwritten}${lenInChars ? ` digit(s) = ${N} byte(s)` : ''} runs past the end of the message (${available} byte(s) left) — read as ${
@@ -40683,11 +40826,16 @@ function _meExecReadTLVMapped(attrs, ctx) {
     bufBytes = bufBytes.slice(lenUsed, lenUsed + n);
     if (bufBase != null) bufBase += lenUsed;
   }
+  // Wire bytes per decoded byte: ascii-hex spells each byte as two characters,
+  // and the cursor moves over the WIRE. Advancing by the decoded count left it
+  // halfway through the TLV text, and the next DE read the rest as its own data.
+  let wirePerByte = 1;
   if ((attrs.encoding || '') === 'ascii-hex') {
     const hex = bufBytes.map(b => String.fromCharCode(b)).join('');
     bufBytes = [];
     for (let i = 0; i + 1 < hex.length; i += 2) bufBytes.push(parseInt(hex.substr(i, 2), 16) || 0);
     bufBase = null;                     // decoded bytes no longer map 1:1 to the message
+    wirePerByte = 2;
   }
 
   const unknown = String(attrs.unknown || 'emit').toLowerCase();
@@ -40800,7 +40948,7 @@ function _meExecReadTLVMapped(attrs, ctx) {
   }
   // `p` is an offset into the TAGS, which start after the length — so the bytes
   // this block crossed are the length plus however far the walk got.
-  if (consumes) ctx.cursor = Math.min(ctx.cursor + lenUsed + p, ctx.bytes.length);
+  if (consumes) ctx.cursor = Math.min(ctx.cursor + lenUsed + p * wirePerByte, ctx.bytes.length);
 }
 
 // A mapped tag's value read by its own blocks. The engine frames it — the
@@ -43323,6 +43471,7 @@ function _meRunTest(opts) {
   const _jb = document.getElementById('me-test-journal'); if (_jb) _jb.disabled = false;
   const fieldCount = ctx.fields.filter(f => !f.error).length;
   const errCount   = ctx.fields.filter(f =>  f.error || f.issue).length;
+  _meTestFields = ctx.fields;   // before the table: its rows carry indexes into it
   const fieldHtml  = ctx.fields.length
     ? _meTestFieldTable(ctx.fields)
     : '<div class="me-test-note">parse_spec produced no fields.</div>';
@@ -43352,7 +43501,6 @@ function _meRunTest(opts) {
   // Hover or click a field row and its bytes light up in the input above —
   // the same gesture the Data Input panel answers, so a parse can be read
   // against the actual bytes without leaving this panel.
-  _meTestFields = ctx.fields;
   _meTestByteMap = netardBcm || _meTestBuildByteMap(text, inputFmt, _own);
   _meTestBindRowHL();
   _meTestInitColResize();
@@ -43389,7 +43537,7 @@ function _meTestHLRanges() {
   const ranges = [];
   const add = (fid, color) => {
     if (!fid) return;
-    const f = _meTestFields.find(x => String(x.id) === String(fid));
+    const f = _meTestFields[+fid];   // fid is the row's index — see _meTestFieldTable
     if (!f || f.startByte == null) return;
     let run = null, asciiRun = null;
     const first = Math.max(0, f.startByte | 0);
@@ -43428,16 +43576,16 @@ function _meTestBindRowHL() {
   _meTestSelFid = null;
   _meTestHovFid = null;
   _meTestPaintHL();
-  for (const tr of out.querySelectorAll('tr[data-fid]')) {
-    const fid = tr.dataset.fid;
+  for (const tr of out.querySelectorAll('tr[data-fidx]')) {
+    const fid = tr.dataset.fidx;
     tr.onmouseenter = () => { _meTestHovFid = fid; _meTestPaintHL(); };
     tr.onmouseleave = () => { _meTestHovFid = null; _meTestPaintHL(); };
     // Click to pin, click again to release — a selection you cannot drop is a
     // highlight the user has to clear by running the test again.
     tr.onclick = () => {
       _meTestSelFid = _meTestSelFid === fid ? null : fid;
-      for (const r of out.querySelectorAll('tr[data-fid]'))
-        r.classList.toggle('sel', r.dataset.fid === _meTestSelFid);
+      for (const r of out.querySelectorAll('tr[data-fidx]'))
+        r.classList.toggle('sel', r.dataset.fidx === _meTestSelFid);
       _meTestPaintHL();
     };
   }
@@ -43502,7 +43650,13 @@ function _meTestFieldTable(fields) {
     const desc = _meTestExtraDesc(f);
     // data-fid drives the input highlight — only on rows that HAVE bytes to
     // point at, so a row with nothing to show never offers the gesture.
-    const fid = (f.id != null && f.startByte != null) ? ` data-fid="${_escHtml(String(f.id))}"` : '';
+    // data-fidx is the row's position in _meTestFields, and is what the
+    // highlight keys on: ids repeat (a field read inside repeat / read-while,
+    // a repeated TLV tag), and a lookup by id lit the FIRST occurrence's bytes
+    // for every later row and selected all of them on a click.
+    const fi  = (_meTestFields || []).indexOf(f);
+    const fid = (f.id != null && f.startByte != null)
+      ? ` data-fid="${_escHtml(String(f.id))}"${fi >= 0 ? ` data-fidx="${fi}"` : ''}` : '';
     // Size and offset sit between the name and the data, not after it: they
     // describe WHERE the value was read, so they are read on the way to it.
     // At the far right they were the first thing a narrow panel clipped.

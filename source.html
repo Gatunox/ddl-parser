@@ -5789,6 +5789,10 @@ function togglePanel(panelId, btnId, resizerId) {
   }
 }
 
+// The Parse Results columns the user can hide, in ONE list: Reset Layout and
+// the picker's checkmarks each had their own copy, and those two lacked Offset.
+const _RES_HIDE_COLS = ['id','desc','len','off','val','trk'];
+
 // Hide the Trk column when only 1 message (tracking is pointless); show for multi-message.
 function _syncTrkColVisibility() {
   const container = document.getElementById('resContainer');
@@ -5796,7 +5800,7 @@ function _syncTrkColVisibility() {
   const single = S.messages.length <= 1;
   container.classList.toggle('hide-trk', single);
   _syncColPickerCheckmarks(
-    ['id','desc','len','val','trk'].filter(c => container.classList.contains('hide-' + c))
+    _RES_HIDE_COLS.filter(c => container.classList.contains('hide-' + c))
   );
 }
 
@@ -7652,7 +7656,10 @@ function _btypeClass(type) {
   return 'btype btype-' + (_KNOWN_BTYPES.has(t) ? t : 'unknown');
 }
 function _btypeStyle(color) {
-  if (!color) return '';
+  // The colour is free text (typed, or from an imported class file) and lands
+  // inside style="…": anything but a plain CSS colour token is dropped, so a
+  // quote cannot close the attribute.
+  if (!color || !/^[#\w(),.%\s-]+$/.test(String(color))) return '';
   // Text and border, not fill. The class supplies the neutral background; the
   // spec's colour outlines the chip and colours its label.
   return `color:${color};border-color:${color}`;
@@ -16058,7 +16065,7 @@ function renderFieldTable(msg) {
                 const _lbl = msg._diag?.msgTypeLabel || msg.msgType?.label || msg.msgType?.type || '';
                 const _thing = msg.isNetard ? 'this record' : 'this message';
                 return (_lbl
-                  ? `${msg.recNo ? `Record #${msg.recNo}: add` : 'Add'} a DDL to <strong>${_escH(_lbl)}</strong> in <span onclick="_meGoToBindings('${_escH(_lbl).replace(/'/g, "\\'")}')" style="cursor:pointer;text-decoration:underline;color:var(--accent)">DDL Bindings</span>`
+                  ? `${msg.recNo ? `Record #${msg.recNo}: add` : 'Add'} a DDL to <strong>${_escH(_lbl)}</strong> in <span data-lbl="${esc(_lbl)}" onclick="_meGoToBindings(this.dataset.lbl)" style="cursor:pointer;text-decoration:underline;color:var(--accent)">DDL Bindings</span>`
                   : 'Load a matching DDL')
                   + ` — or, for a one-off, right-click a DDL in the tree and choose <strong>Use for parsing (override)</strong>, then press <strong>▶ Parse</strong> to apply it to ${_thing}.`;
               })()
@@ -17330,7 +17337,7 @@ async function scan(file) {
   self.postMessage({ type: 'done', index, fileSize: total });
 }
 self.onmessage = e => scan(e.data.file).catch(err =>
-  self.postMessage({ type: 'error', msg: err.message }));
+  self.postMessage({ type: 'error', readError: true, msg: err && err.message }));
 `;
 
 const AUDIT_VIRT_COUNT = 300;   // rows rendered in DOM at a time
@@ -17538,6 +17545,13 @@ function _auditOnIndexed(fileSize) {
 function _auditOnScanError(msg) {
   document.getElementById('auditProgressArea').style.display = 'none';
   document.getElementById('auditBrowserReady').style.display = 'flex';
+  // The file could not be read at all — no offset, no length, and nothing about
+  // the header layout to blame. Said as what it is.
+  if (msg.readError) {
+    document.getElementById('auditRecordList').innerHTML = '<div class="audit-error-msg">'
+      + '⚠ Could not read the file' + (msg.msg ? ': ' + esc(msg.msg) : '') + '</div>';
+    return;
+  }
   const partial = _auditSt.index.length;
   const errHtml = '<div class="audit-error-msg">'
     + '⚠ Scan stopped at offset 0x' + (msg.pos || 0).toString(16).toUpperCase()
@@ -17619,8 +17633,9 @@ function _auditPreloadDateTimeFilters() {
   const b = fwd ? last  : first;
   document.getElementById('auditFltDtFrom').value = a.date;
   document.getElementById('auditFltDtTo').value   = b.date;
-  document.getElementById('auditFltTmFrom').value = '00:00';
-  document.getElementById('auditFltTmTo').value   = '23:59';
+  // From is the later end under ◀, so it gets the end of its day.
+  document.getElementById('auditFltTmFrom').value = fwd ? '00:00' : '23:59';
+  document.getElementById('auditFltTmTo').value   = fwd ? '23:59' : '00:00';
 }
 
 function auditToggleDtDir() {
@@ -17665,6 +17680,18 @@ function _auditTsBytesToParts(tsBytes) {
   const yymmdd = (d.getUTCFullYear() % 100) * 10000 + (d.getUTCMonth() + 1) * 100 + d.getUTCDate();
   const hhmm   = d.getUTCHours() * 60 + d.getUTCMinutes();
   return { yymmdd, hhmm };
+}
+
+// The date filter's two bounds as minutes since YYMMDD 00:00 — {lo, hi} — or
+// null when no date is given. A side with a time but no date takes the other
+// side's date; a side with no time is the start (lo) or end (hi) of its day.
+// The earlier date is the low bound whichever box it is in (◀ reads From as the
+// later end).
+function _auditDtRange(dtFrom, tmFrom, dtTo, tmTo) {
+  if (dtFrom === null && dtTo === null) return null;
+  let a = { d: dtFrom ?? dtTo, t: tmFrom }, b = { d: dtTo ?? dtFrom, t: tmTo };
+  if (a.d > b.d || (a.d === b.d && a.t !== null && b.t !== null && a.t > b.t)) [a, b] = [b, a];
+  return { lo: a.d * 1440 + (a.t ?? 0), hi: b.d * 1440 + (b.t ?? 1439) };
 }
 
 const _AUDIT_FLT_GRP_DEFS = {
@@ -17720,6 +17747,7 @@ function auditApplyFilter() {
   const dtTo   = _auditParseFltDate(document.getElementById('auditFltDtTo').value);
   const tmFrom = _auditParseFltTime(document.getElementById('auditFltTmFrom').value);
   const tmTo   = _auditParseFltTime(document.getElementById('auditFltTmTo').value);
+  const _dtRange = _auditDtRange(dtFrom, tmFrom, dtTo, tmTo);
   let filtered = _auditSt.index.filter((r, i) => {
     if (src || dst) {
       if (sdAnd || !(src && dst)) {
@@ -17732,7 +17760,14 @@ function auditApplyFilter() {
     const n = r.recNo != null ? r.recNo : i + 1;
     if (hasFrom && n < fromV) return false;
     if (hasTo   && n > toV)   return false;
-    if (dtFrom !== null || dtTo !== null || tmFrom !== null || tmTo !== null) {
+    if (_dtRange) {
+      // A date on either side makes the bounds two INSTANTS, date and time
+      // together: "15 22:00 → 16 02:00" is the four hours across midnight. Taken
+      // apart, the time test read 02:00–22:00 and kept the opposite.
+      const { yymmdd, hhmm } = _auditTsBytesToParts(r.tsBytes);
+      const at = yymmdd * 1440 + hhmm;
+      if (at < _dtRange.lo || at > _dtRange.hi) return false;
+    } else if (tmFrom !== null || tmTo !== null) {
       const { yymmdd, hhmm } = _auditTsBytesToParts(r.tsBytes);
       const dtLo = dtFrom !== null && dtTo !== null ? Math.min(dtFrom, dtTo) : dtFrom;
       const dtHi = dtFrom !== null && dtTo !== null ? Math.max(dtFrom, dtTo) : dtTo;
@@ -18750,6 +18785,10 @@ function _syncTrackChrome() {
 
 function renderTracking() {
   const tracked = [...S.trackedFields];
+  // A filter on a column the user stopped tracking would keep hiding rows with
+  // no select left on screen to clear it.
+  for (const k of Object.keys(S.trackFilters))
+    if (k.startsWith('f:') && !S.trackedFields.has(k.slice(2))) delete S.trackFilters[k];
   document.getElementById('resPanelTitle').textContent = 'Field Tracking';
   document.getElementById('trkExportBtn').style.display = tracked.length ? 'inline-flex' : 'none';
   _syncTrkExportBtn();
@@ -18808,12 +18847,15 @@ function renderTracking() {
       const seen = new Set();
       for (let i = 0; i < S.messages.length; i++) seen.add(cellValue(S.messages[i], col, i));
       const opts = [...seen].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
-      const cur  = S.trackFilters[col] ?? '';
-      return `<td class="trk-filter-cell"><select class="trk-filter" data-col="${esc(col)}"${cur ? ' data-on' : ''}
+      // An empty cell is a value of its own: "(empty)" is marked data-empty so
+      // it is not the same option as "(all)", whose value is also "".
+      const on   = Object.prototype.hasOwnProperty.call(S.trackFilters, col);
+      const cur  = on ? S.trackFilters[col] : null;
+      return `<td class="trk-filter-cell"><select class="trk-filter" data-col="${esc(col)}"${on ? ' data-on' : ''}
         onchange="trackFilterChange(this)" onclick="event.stopPropagation()"
         title="${esc(col === 'ts' ? 'Timestamp' : col.slice(2))} — ${opts.length} value${opts.length !== 1 ? 's' : ''}">` +
-        `<option value=""${cur === '' ? ' selected' : ''}>(all)</option>` +
-        opts.map(v => `<option value="${esc(v)}"${v === cur ? ' selected' : ''}>${esc(v) || '(empty)'}</option>`).join('') +
+        `<option value=""${!on ? ' selected' : ''}>(all)</option>` +
+        opts.map(v => `<option value="${esc(v)}"${v === '' ? ' data-empty' : ''}${v === cur ? ' selected' : ''}>${esc(v) || '(empty)'}</option>`).join('') +
         `</select></td>`;
     }).join('') + `</tr>`;
 
@@ -18870,7 +18912,8 @@ function renderTracking() {
 // unpick it, and clearing the filter brings it back still picked.
 function trackFilterChange(sel) {
   const col = sel.dataset.col;
-  if (sel.value === '') { delete S.trackFilters[col]; sel.removeAttribute('data-on'); }
+  const all = sel.value === '' && !sel.options[sel.selectedIndex]?.hasAttribute('data-empty');
+  if (all) { delete S.trackFilters[col]; sel.removeAttribute('data-on'); }
   else { S.trackFilters[col] = sel.value; sel.setAttribute('data-on', ''); }
   _trackApplyRowFilters();
 }
@@ -19359,7 +19402,9 @@ function _syncSpecForceSelect() {
     sel.innerHTML = '<option value="">CLASS: AUTO</option>'
       + (_files.length ? _grp('Messages', _msgs) + _grp('Files', _files)
                        : _msgs.map(_opt).join(''))
-      + (_missing ? _opt(_missing) : '');
+      // VALUE is the armed label itself, so sel.value = armed finds it and
+      // picking it again re-arms the same label instead of "X  (missing)".
+      + (_missing ? `<option value="${esc(armed)}">${esc(_missing)}</option>` : '');
     sel.dataset.built = want;
   }
   sel.value = armed;
@@ -19578,6 +19623,10 @@ function _syncTreeCount(tree) {
 }
 
 function renderDDLTree() {
+  // A name inside a JS string in an onclick: the apostrophe and backslash are
+  // escaped for JS, then the whole thing for the HTML attribute. esc() alone
+  // left a DEF named O'BRIEN as a syntax error on click.
+  const jsq = s => esc(String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'"));
   const tree = S.ddlTree;
   _syncTreeCount(tree);
   // The collapsed rail mirrors this tree, so it is rebuilt from the same call
@@ -19656,10 +19705,10 @@ function renderDDLTree() {
     // When filtering, caret is cosmetic only (can't collapse while filter active)
     const caretClick = fq
       ? `onclick="event.stopPropagation()"`
-      : `onclick="event.stopPropagation();toggleTreeExp('${esc(vol)}')"`;
+      : `onclick="event.stopPropagation();toggleTreeExp('${jsq(vol)}')"`;
     const vExcl    = isExcluded(vol);
     const vExclCls = vExcl ? ' tree-excl-node' : '';
-    html += `<div class="tree-node${vSel}${vAnc}${vExclCls}${vExp?' tree-open':''}" data-ntype="vol" data-vol="${esc(vol)}" onclick="selectScope('vol','${esc(vol)}')" ${fq?'':` ondblclick="event.stopPropagation();toggleTreeExp('${esc(vol)}')"`}>
+    html += `<div class="tree-node${vSel}${vAnc}${vExclCls}${vExp?' tree-open':''}" data-ntype="vol" data-vol="${esc(vol)}" onclick="selectScope('vol','${jsq(vol)}')" ${fq?'':` ondblclick="event.stopPropagation();toggleTreeExp('${jsq(vol)}')"`}>
       <span class="tree-caret" ${caretClick}>${vExp?'−':'+'}</span>
       <span class="tree-vol-lbl" title="${esc(vol)}">${hi(vol)}</span>
       ${vExcl ? '<span class="tree-excl-badge">EXCL</span>' : ''}<span class="tree-cnt">${cnt}</span>
@@ -19675,10 +19724,10 @@ function renderDDLTree() {
         const svCnt = Object.keys(tree[vol][sv] || {}).length;
         const svCaretClick = fq
           ? `onclick="event.stopPropagation()"`
-          : `onclick="event.stopPropagation();toggleTreeExp('${esc(svKey)}')"`;
+          : `onclick="event.stopPropagation();toggleTreeExp('${jsq(svKey)}')"`;
         const svExcl    = isExcluded(vol, sv);
         const svExclCls = svExcl ? ' tree-excl-node' : '';
-        html += `<div class="tree-node${svSel}${svAnc}${svExclCls}${svExp?' tree-open':''}" data-ntype="sv" data-vol="${esc(vol)}" data-sv="${esc(sv)}" onclick="selectScope('sv','${esc(vol)}','${esc(sv)}')" ${fq?'':` ondblclick="event.stopPropagation();toggleTreeExp('${esc(svKey)}')"`}>
+        html += `<div class="tree-node${svSel}${svAnc}${svExclCls}${svExp?' tree-open':''}" data-ntype="sv" data-vol="${esc(vol)}" data-sv="${esc(sv)}" onclick="selectScope('sv','${jsq(vol)}','${jsq(sv)}')" ${fq?'':` ondblclick="event.stopPropagation();toggleTreeExp('${jsq(svKey)}')"`}>
           <span class="tree-caret" ${svCaretClick}>${svExp?'−':'+'}</span>
           <span class="tree-sv-lbl" title="${esc(sv)}">${hi(sv)}</span>
           ${svExcl ? '<span class="tree-excl-badge">EXCL</span>' : ''}<span class="tree-cnt">${svCnt}</span>
@@ -19706,11 +19755,11 @@ function renderDDLTree() {
             const pendCls    = (isPending || isNewEmpty) ? ' tree-pending' : '';
             const onclick = isPending
               ? `onclick="flash('Not saved yet — click Save to persist','warn')"`
-              : `onclick="selectScope('ddl','${esc(vol)}','${esc(sv)}','${esc(d)}')"`;
+              : `onclick="selectScope('ddl','${jsq(vol)}','${jsq(sv)}','${jsq(d)}')"`;
             const fileExp      = showDefSubNodes && (fq ? true : S.treeExp.has(fileKey));
             const fileCaretClick = fq
               ? `onclick="event.stopPropagation()"`
-              : `onclick="event.stopPropagation();toggleTreeExp('${esc(fileKey)}')"`;
+              : `onclick="event.stopPropagation();toggleTreeExp('${jsq(fileKey)}')"`;
             const fileCaret    = showDefSubNodes
               ? `<span class="tree-caret" ${fileCaretClick}>${fileExp?'−':'+'}</span>`
               : `<span class="tree-caret" style="visibility:hidden">−</span>`;
@@ -19730,14 +19779,14 @@ function renderDDLTree() {
             const unresCount  = unresResult?.unresolvedWarnings?.length || unresPaths?.length || 0;
             const unresTypes  = unresPaths?.join(', ') || '';
             const unresBadge  = unresCount
-              ? `<span class="tree-unres-badge" title="⚠ ${unresCount} unresolved type ref${unresCount > 1 ? 's' : ''}${unresTypes ? ': ' + unresTypes : ''} — click to see list" onclick="event.stopPropagation();_vbarArm();selectScope('ddl','${esc(vol)}','${esc(sv)}','${esc(d)}');S.treeExp.delete(_MISSREF_KEY);setTimeout(()=>{updateDDLValidationBar('${esc(vol)}/${esc(sv)}/${esc(d)}',true);renderDDLTree();document.querySelector('.tree-missref-hdr')?.scrollIntoView({behavior:'smooth',block:'nearest'});},80)">⚠${unresCount}</span>`
+              ? `<span class="tree-unres-badge" title="⚠ ${unresCount} unresolved type ref${unresCount > 1 ? 's' : ''}${unresTypes ? ': ' + unresTypes : ''} — click to see list" onclick="event.stopPropagation();_vbarArm();selectScope('ddl','${jsq(vol)}','${jsq(sv)}','${jsq(d)}');S.treeExp.delete(_MISSREF_KEY);setTimeout(()=>{updateDDLValidationBar('${jsq(vol + '/' + sv + '/' + d)}',true);renderDDLTree();document.querySelector('.tree-missref-hdr')?.scrollIntoView({behavior:'smooth',block:'nearest'});},80)">⚠${unresCount}</span>`
               : '';
             const valResult  = S.ddlValidationResults[fileKey];
             const errBadge   = valResult?.errors?.length
-              ? `<span class="tree-error-badge" title="${esc(valResult.errors.map(e => '✖ ' + e).join('\n'))}" onclick="event.stopPropagation();_vbarArm();selectScope('ddl','${esc(vol)}','${esc(sv)}','${esc(d)}');setTimeout(()=>{const b=document.getElementById('ddlValidationBar');if(b)b.scrollIntoView({behavior:'smooth',block:'nearest'});},100)">✖${valResult.errors.length}</span>`
+              ? `<span class="tree-error-badge" title="${esc(valResult.errors.map(e => '✖ ' + e).join('\n'))}" onclick="event.stopPropagation();_vbarArm();selectScope('ddl','${jsq(vol)}','${jsq(sv)}','${jsq(d)}');setTimeout(()=>{const b=document.getElementById('ddlValidationBar');if(b)b.scrollIntoView({behavior:'smooth',block:'nearest'});},100)">✖${valResult.errors.length}</span>`
               : '';
             const warnBadge  = (!valResult?.errors?.length && valResult?.warnings?.length)
-              ? `<span class="tree-warn-badge" title="${esc(valResult.warnings.map(w => '⚠ ' + w).join('\n'))}" onclick="event.stopPropagation();_vbarArm();selectScope('ddl','${esc(vol)}','${esc(sv)}','${esc(d)}');setTimeout(()=>{const b=document.getElementById('ddlValidationBar');if(b)b.scrollIntoView({behavior:'smooth',block:'nearest'});},100)">⚠${valResult.warnings.length}</span>`
+              ? `<span class="tree-warn-badge" title="${esc(valResult.warnings.map(w => '⚠ ' + w).join('\n'))}" onclick="event.stopPropagation();_vbarArm();selectScope('ddl','${jsq(vol)}','${jsq(sv)}','${jsq(d)}');setTimeout(()=>{const b=document.getElementById('ddlValidationBar');if(b)b.scrollIntoView({behavior:'smooth',block:'nearest'});},100)">⚠${valResult.warnings.length}</span>`
               : '';
             // tknBadge and typeBadge are file-level — always on filename node (visible even when collapsed).
             // unresBadge/errBadge/warnBadge go on DEF sub-node for single-DEF files, filename for multi-DEF.
@@ -19748,7 +19797,7 @@ function renderDDLTree() {
             const defCntBadge = fileDefNames.length > 0 ? `<span class="tree-cnt">${fileDefNames.length}</span>` : '';
             const fileBadges = tknBadge + typeBadge + exclBadge + (!showDefSubNodes || !fileExp ? unresBadge + errBadge + warnBadge : '') + defCntBadge;
             const fileDblClick = showDefSubNodes && !fq && !isPending
-              ? `ondblclick="event.stopPropagation();toggleTreeExp('${esc(fileKey)}')"` : '';
+              ? `ondblclick="event.stopPropagation();toggleTreeExp('${jsq(fileKey)}')"` : '';
             html += `<div class="tree-node${dSel}${dAnc}${pendCls}${fileExclCls}${isParseOverride(vol, sv, d) ? ' tree-ovr' : ''}" data-ntype="ddl" data-vol="${esc(vol)}" data-sv="${esc(sv)}" data-name="${esc(d)}" ${onclick} ${fileDblClick}>
               ${fileCaret}
               <span class="tree-ddl-lbl" title="${esc(d)}${isPending ? ' (unsaved)' : ''}">${hi(d)}</span>${fileBadges}
@@ -19768,19 +19817,19 @@ function renderDDLTree() {
                 const _dUnresCount = _dr?.unresolvedWarnings?.length || _durPaths?.length || 0;
                 const _dUnresTypes = _durPaths?.join(', ') || '';
                 const _dUnresBadge = _dUnresCount
-                  ? `<span class="tree-unres-badge" title="⚠ ${_dUnresCount} unresolved type ref${_dUnresCount > 1 ? 's' : ''}${_dUnresTypes ? ': ' + _dUnresTypes : ''} — click to see list" onclick="event.stopPropagation();_vbarArm();selectScope('def','${esc(vol)}','${esc(sv)}','${esc(d)}','${esc(defName)}');S.treeExp.delete(_MISSREF_KEY);setTimeout(()=>{renderDDLTree();document.querySelector('.tree-missref-hdr')?.scrollIntoView({behavior:'smooth',block:'nearest'});},80)">⚠${_dUnresCount}</span>`
+                  ? `<span class="tree-unres-badge" title="⚠ ${_dUnresCount} unresolved type ref${_dUnresCount > 1 ? 's' : ''}${_dUnresTypes ? ': ' + _dUnresTypes : ''} — click to see list" onclick="event.stopPropagation();_vbarArm();selectScope('def','${jsq(vol)}','${jsq(sv)}','${jsq(d)}','${jsq(defName)}');S.treeExp.delete(_MISSREF_KEY);setTimeout(()=>{renderDDLTree();document.querySelector('.tree-missref-hdr')?.scrollIntoView({behavior:'smooth',block:'nearest'});},80)">⚠${_dUnresCount}</span>`
                   : '';
                 const _dErrBadge  = _dr?.errors?.length
-                  ? `<span class="tree-error-badge" title="${esc((_dr.errors).map(e => '✖ ' + e).join('\n'))}" onclick="event.stopPropagation();_vbarArm();selectScope('def','${esc(vol)}','${esc(sv)}','${esc(d)}','${esc(defName)}');setTimeout(()=>{const b=document.getElementById('ddlValidationBar');if(b)b.scrollIntoView({behavior:'smooth',block:'nearest'});},100)">✖${_dr.errors.length}</span>`
+                  ? `<span class="tree-error-badge" title="${esc((_dr.errors).map(e => '✖ ' + e).join('\n'))}" onclick="event.stopPropagation();_vbarArm();selectScope('def','${jsq(vol)}','${jsq(sv)}','${jsq(d)}','${jsq(defName)}');setTimeout(()=>{const b=document.getElementById('ddlValidationBar');if(b)b.scrollIntoView({behavior:'smooth',block:'nearest'});},100)">✖${_dr.errors.length}</span>`
                   : '';
                 const _dWarnBadge = (!_dr?.errors?.length && _dr?.warnings?.length)
-                  ? `<span class="tree-warn-badge" title="${esc((_dr.warnings).map(w => '⚠ ' + w).join('\n'))}" onclick="event.stopPropagation();_vbarArm();selectScope('def','${esc(vol)}','${esc(sv)}','${esc(d)}','${esc(defName)}');setTimeout(()=>{const b=document.getElementById('ddlValidationBar');if(b)b.scrollIntoView({behavior:'smooth',block:'nearest'});},100)">⚠${_dr.warnings.length}</span>`
+                  ? `<span class="tree-warn-badge" title="${esc((_dr.warnings).map(w => '⚠ ' + w).join('\n'))}" onclick="event.stopPropagation();_vbarArm();selectScope('def','${jsq(vol)}','${jsq(sv)}','${jsq(d)}','${jsq(defName)}');setTimeout(()=>{const b=document.getElementById('ddlValidationBar');if(b)b.scrollIntoView({behavior:'smooth',block:'nearest'});},100)">⚠${_dr.warnings.length}</span>`
                   : '';
                 const defExcl    = isExcluded(vol, sv, d, defName);
                 const defExclCls = defExcl ? ' tree-excl-node' : '';
                 const defExclBadge = defExcl ? '<span class="tree-excl-badge">EXCL</span>' : '';
                 const defBadges = defExclBadge + _dUnresBadge + _dErrBadge + _dWarnBadge;
-                html += `<div class="tree-node${defSel}${defExclCls}${isParseOverride(vol, sv, d, defName) ? ' tree-ovr' : ''}" data-ntype="def" data-vol="${esc(vol)}" data-sv="${esc(sv)}" data-name="${esc(d)}" data-def="${esc(defName)}" onclick="selectScope('def','${esc(vol)}','${esc(sv)}','${esc(d)}','${esc(defName)}')">
+                html += `<div class="tree-node${defSel}${defExclCls}${isParseOverride(vol, sv, d, defName) ? ' tree-ovr' : ''}" data-ntype="def" data-vol="${esc(vol)}" data-sv="${esc(sv)}" data-name="${esc(d)}" data-def="${esc(defName)}" onclick="selectScope('def','${jsq(vol)}','${jsq(sv)}','${jsq(d)}','${jsq(defName)}')">
                   <span class="tree-caret" style="visibility:hidden">−</span>
                   <span class="tree-def-lbl" title="Jump to DEF ${esc(defName)} in ${esc(d)}">${hi(defName)}</span>${defTknBadge}${defBadges}
                 </div>`;
@@ -19804,7 +19853,7 @@ function renderDDLTree() {
     for (const def of S.stagingDefs) {
       const isActive = S.stagingActive === def.name;
       const activeCls = isActive ? ' tree-sel' : '';
-      html += `<div class="tree-node tree-pending${activeCls}" onclick="loadStagedDef('${esc(def.name)}')">
+      html += `<div class="tree-node tree-pending${activeCls}" onclick="loadStagedDef('${jsq(def.name)}')">
         <span class="tree-caret" style="visibility:hidden">−</span>
         <span class="tree-ddl-lbl" title="${esc(def.name)} (staged — not yet saved)">${esc(def.name)}</span>
       </div>`;
@@ -19837,7 +19886,7 @@ function renderDDLTree() {
       for (const typeName of missingNames) {
         const refs = allMissing[typeName];
         const tip  = `Referenced by:\n${refs.join('\n')}\n\nClick to create a stub definition`;
-        html += `<div class="tree-node tree-missref-item" title="${esc(tip)}" onclick="createMissingRefStub('${esc(typeName)}')">
+        html += `<div class="tree-node tree-missref-item" title="${esc(tip)}" onclick="createMissingRefStub('${jsq(typeName)}')">
           <span class="tree-caret" style="visibility:hidden">−</span>
           <span class="tree-ddl-lbl">${esc(typeName)}</span>
         </div>`;
@@ -20340,10 +20389,21 @@ function copyMsgToClipboard() {
   showToast(ok ? `✓ Message ${S.curIdx + 1} copied to clipboard` : 'Copy failed');
 }
 
+// A volume, subvolume or file name as the tree stores it: trimmed and upper-
+// cased, never empty, never holding "/" — every path is split on it, so
+// "A/B" as one name would read as two levels. null (with a flash) when unusable.
+// One rule for New, Rename and Paste; Paste used to keep the name raw, so "abc"
+// and "ABC" could sit side by side.
+function _treeName(raw) {
+  const v = String(raw ?? '').trim().toUpperCase();
+  if (!v) return null;
+  if (v.includes('/')) { flash('A name cannot contain "/"', 'warn'); return null; }
+  return v;
+}
+
 function newVolume() {
   showPrompt('New volume name:', '', v => {
-    if (!v) return;
-    v = v.trim().toUpperCase(); if (!v) return;
+    v = _treeName(v); if (!v) return;
     if (S.ddlTree[v]) { flash('Volume already exists', 'warn'); return; }
     S.ddlTree[v] = {};
     saveTree(); S.treeExp.add(v); selectScope('vol', v);
@@ -20354,8 +20414,7 @@ function newSubvolume() {
   const sc = S.scope;
   if (!sc) { flash('Select a volume first', 'warn'); return; }
   showPrompt('New subvolume name:', '', sv => {
-    if (!sv) return;
-    sv = sv.trim().toUpperCase(); if (!sv) return;
+    sv = _treeName(sv); if (!sv) return;
     if (!S.ddlTree[sc.vol]) S.ddlTree[sc.vol] = {};
     if (S.ddlTree[sc.vol][sv]) { flash('Subvolume already exists', 'warn'); return; }
     S.ddlTree[sc.vol][sv] = {};
@@ -20371,8 +20430,7 @@ function newDDLEntry() {
   if (!S.ddlTree[vol])     S.ddlTree[vol]     = {};
   if (!S.ddlTree[vol][sv]) S.ddlTree[vol][sv] = {};
   showPrompt('New filename:', '', rawName => {
-    if (!rawName) return;
-    const filename = rawName.trim().toUpperCase();
+    const filename = _treeName(rawName);
     if (!filename) return;
     if (S.ddlTree[vol][sv][filename] !== undefined) { flash('File already exists', 'warn'); return; }
     S.ddlTree[vol][sv][filename] = '';
@@ -20415,6 +20473,14 @@ function splitHPEDDL(text) {
         // Prepend any accumulated preamble (?Section, comments, SECTION cmd, etc.)
         buf = preamble.length ? [...preamble, line] : [line];
         preamble = [];   // consumed — reset so next sibling def gets no stale preamble
+        // A single-line DEF ("DEF AMT PIC 9(8)." / "DEF X TYPE BINARY 32.") has
+        // no END: the period on its own line closes it. Left open, it ran on to
+        // the NEXT definition's END and swallowed that definition whole.
+        const rest = line.slice(startM.index + startM[0].length);
+        if (/\b(?:PIC(?:TURE)?|TYPE)\b/i.test(rest) && /\.\s*$/.test(line)) {
+          defs.push({ name, content: buf.join('\n') });
+          name = null; buf = [];
+        }
       } else if (/^\s*DELETE\s+/i.test(trimmed)) {
         // DELETE Record / DELETE Definition — schema maintenance commands, skip entirely
       } else {
@@ -21121,8 +21187,7 @@ function saveDDL() {
   if (!newName) {
     // Vol/SV selected but no filename yet — ask the user for one, then save.
     showPrompt('New filename:', '', rawName => {
-      if (!rawName) return;
-      const fn = rawName.trim().toUpperCase();
+      const fn = _treeName(rawName);
       if (!fn) return;
       _commit(fn);
     });
@@ -21307,7 +21372,7 @@ function ctxCopyDef(vol, sv, fileName, defName) {
 function ctxPasteVol() {
   if (!S.clipboard || S.clipboard.type !== 'vol') return;
   showPrompt('Paste volume as:', S.clipboard.vol, newName => {
-    if (!newName) return;
+    newName = _treeName(newName); if (!newName) return;
     if (S.ddlTree[newName]) { flash('Volume already exists', 'warn'); return; }
     S.ddlTree[newName] = JSON.parse(JSON.stringify(S.clipboard.data));
     saveTree(); buildUnresolvedRefs(); S.treeExp.add(newName); renderDDLTree();
@@ -21317,7 +21382,7 @@ function ctxPasteVol() {
 function ctxPasteSv(vol) {
   if (!S.clipboard || S.clipboard.type !== 'sv') return;
   showPrompt('Paste subvolume as:', S.clipboard.sv, newName => {
-    if (!newName) return;
+    newName = _treeName(newName); if (!newName) return;
     if ((S.ddlTree[vol] || {})[newName]) { flash('Subvolume already exists', 'warn'); return; }
     if (!S.ddlTree[vol]) S.ddlTree[vol] = {};
     S.ddlTree[vol][newName] = JSON.parse(JSON.stringify(S.clipboard.data));
@@ -21328,7 +21393,7 @@ function ctxPasteSv(vol) {
 function ctxPasteDdl(vol, sv) {
   if (!S.clipboard || S.clipboard.type !== 'ddl') return;
   showPrompt('Paste DDL as:', S.clipboard.name, newName => {
-    if (!newName) return;
+    newName = _treeName(newName); if (!newName) return;
     if (!S.ddlTree[vol]) S.ddlTree[vol] = {};
     if (!S.ddlTree[vol][sv]) S.ddlTree[vol][sv] = {};
     if (S.ddlTree[vol][sv][newName]) { flash('DDL already exists', 'warn'); return; }
@@ -21340,7 +21405,7 @@ function ctxPasteDdl(vol, sv) {
 function ctxPasteDef(vol, sv) {
   if (!S.clipboard || S.clipboard.type !== 'def') return;
   showPrompt('Paste DDL as:', S.clipboard.name, newName => {
-    if (!newName) return;
+    newName = _treeName(newName); if (!newName) return;
     if (!S.ddlTree[vol]) S.ddlTree[vol] = {};
     if (!S.ddlTree[vol][sv]) S.ddlTree[vol][sv] = {};
     if (S.ddlTree[vol][sv][newName]) { flash('DDL already exists', 'warn'); return; }
@@ -21353,8 +21418,8 @@ function ctxPasteDef(vol, sv) {
 // ---- Rename ----
 function ctxRenameVol(vol) {
   showPrompt('Rename volume:', vol, newName => {
+    newName = _treeName(newName);
     if (!newName || newName === vol) return;
-    newName = newName.trim().toUpperCase();
     if (S.ddlTree[newName]) { flash('Volume already exists', 'warn'); return; }
     S.ddlTree[newName] = S.ddlTree[vol];
     delete S.ddlTree[vol];
@@ -21367,8 +21432,8 @@ function ctxRenameVol(vol) {
 }
 function ctxRenameSv(vol, sv) {
   showPrompt('Rename subvolume:', sv, newName => {
+    newName = _treeName(newName);
     if (!newName || newName === sv) return;
-    newName = newName.trim().toUpperCase();
     if ((S.ddlTree[vol] || {})[newName]) { flash('Subvolume already exists', 'warn'); return; }
     S.ddlTree[vol][newName] = S.ddlTree[vol][sv];
     delete S.ddlTree[vol][sv];
@@ -21382,8 +21447,8 @@ function ctxRenameSv(vol, sv) {
 }
 function ctxRenameDdl(vol, sv, name) {
   showPrompt('Rename DDL:', name, newName => {
+    newName = _treeName(newName);
     if (!newName || newName === name) return;
-    newName = newName.trim().toUpperCase();
     if ((S.ddlTree[vol]?.[sv] || {})[newName]) { flash('DDL already exists', 'warn'); return; }
     S.ddlTree[vol][sv][newName] = S.ddlTree[vol][sv][name];
     delete S.ddlTree[vol][sv][name];
@@ -22542,7 +22607,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.64.7.0';
+const APP_VERSION  = '1.64.8.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -22657,7 +22722,7 @@ function saveLayout() {
     // Hidden columns
     const container = document.getElementById('resContainer');
     if (container) {
-      layout.hiddenCols = ['id','desc','len','off','val','trk']
+      layout.hiddenCols = _RES_HIDE_COLS
         .filter(c => container.classList.contains('hide-' + c));
     }
     // Column widths are NOT here: _ME_COLRZ.res owns them, under its own key,
@@ -22708,7 +22773,7 @@ function loadLayout() {
     if (Array.isArray(layout.hiddenCols)) {
       const container = document.getElementById('resContainer');
       if (container) {
-        ['id','desc','len','off','val','trk'].forEach(c => container.classList.remove('hide-' + c));
+        _RES_HIDE_COLS.forEach(c => container.classList.remove('hide-' + c));
         layout.hiddenCols.forEach(c => container.classList.add('hide-' + c));
         _syncColPickerCheckmarks(layout.hiddenCols);
       }
@@ -22739,7 +22804,7 @@ function resetLayout() {
   // Show all columns
   const container = document.getElementById('resContainer');
   if (container) {
-    ['id','desc','len','val','trk'].forEach(c => container.classList.remove('hide-' + c));
+    _RES_HIDE_COLS.forEach(c => container.classList.remove('hide-' + c));
     _syncColPickerCheckmarks([]);
   }
   // Through the registry that owns them, not a fourth hand-written list — this
@@ -24300,7 +24365,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Nothing else is touched.
     {
       const _aTag = document.activeElement?.tagName;
-      if (_auditDetailOpen() && _aTag !== 'INPUT' && _aTag !== 'TEXTAREA'
+      if (_auditDetailOpen() && _aTag !== 'INPUT' && _aTag !== 'TEXTAREA' && _aTag !== 'SELECT'
           && !document.activeElement?.isContentEditable) {
         if (e.key === 'ArrowUp'   || e.key === 'ArrowLeft')  { e.preventDefault(); auditNavPopup(-1); return; }
         if (e.key === 'ArrowDown' || e.key === 'ArrowRight') { e.preventDefault(); auditNavPopup(1);  return; }
@@ -24314,7 +24379,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // or reached by the browser's own Tab handling.
     {
       const _tTag = document.activeElement?.tagName;
-      const _typing = _tTag === 'INPUT' || _tTag === 'TEXTAREA' || document.activeElement?.isContentEditable;
+      const _typing = _tTag === 'INPUT' || _tTag === 'TEXTAREA' || _tTag === 'SELECT' || document.activeElement?.isContentEditable;
       const _ppo = document.getElementById('parseProgressOverlay');
       const _pp  = document.getElementById('ppPicker');
       if (!_typing && _ppo && !_ppo.classList.contains('hidden') && _pp && !_pp.classList.contains('hidden')
@@ -24338,9 +24403,10 @@ document.addEventListener('DOMContentLoaded', () => {
     // P parse, X clear, V inspect, Space) were removed: they fired whenever
     // focus was not in a field, so ordinary typing anywhere else in the app
     // triggered them.
-    // Don't intercept when focus is inside a text input, textarea, or contenteditable (e.g. CodeMirror)
+    // Don't intercept when focus is inside a text input, textarea, select, or contenteditable (e.g. CodeMirror)
+    // — a select's own arrows change its option.
     const tag = document.activeElement?.tagName;
-    if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
     if (document.activeElement?.isContentEditable) return;
 
     if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
@@ -24884,6 +24950,10 @@ function blRetagSelected() {
 function blRenderSidebar() {
   const q = document.getElementById('blFilter')?.value || '';
   const all = _blAll();
+  // A picked tag no baseline carries any more (deleted or retagged) has no chip
+  // left to unpick it with, and as an AND it would empty the list for good.
+  const _live = new Set(_blTagCounts().map(t => t.tag.toLowerCase()));
+  for (const t of [..._blPickedTags]) if (!_live.has(t.toLowerCase())) _blPickedTags.delete(t);
   const shown = _blFilter(all, q, _blPickedTags);
 
   const rail = document.getElementById('bl-tagrail');
@@ -33509,7 +33579,9 @@ const _ME_FM_ED = {
                  // Setting it BACK to the declared length removes the override
                  // rather than storing one that changes nothing: an entry in the
                  // list with no effect on the table is a lie about the parse.
-                 noop: (row, v) => +v === (row?.declaredLen ?? row?.length),
+                 // Size 0 is the same: every reader takes a 0 as "no size",
+                 // so storing one only listed a ghost override.
+                 noop: (row, v) => +v === 0 || +v === (row?.declaredLen ?? row?.length),
                  set: (o, v) => { o.bytes = +v; },
                  has: o => o.bytes != null,
                  clear: o => { delete o.bytes; } },
@@ -34293,7 +34365,7 @@ function _meHtmlId(item) {
     <div class="me-fld">
       <div class="me-lbl">Color</div>
       <div class="me-color-row">
-        <input type="color" class="me-swatch" id="me-color-pick" value="${item.color || '#888888'}"
+        <input type="color" class="me-swatch" id="me-color-pick" value="${_escHtml(item.color || '#888888')}"
           oninput="_meField('color',this.value);const h=document.getElementById('me-color-hex');if(h)h.value=this.value">
         <input class="me-inp" type="text" id="me-color-hex" value="${ea(item.color)}"
           oninput="_meField('color',this.value);const p=document.getElementById('me-color-pick');if(p&&this.value.match(/^#[0-9a-fA-F]{6}$/))p.value=this.value"
@@ -34769,7 +34841,7 @@ function _meHtmlRecs(item) {
   ondragend="_meRecDragEnd(event)">
   <div class="me-rec-head" onclick="_meToggleRec(${i})" title="${editing ? 'Close to reorder' : 'Drag to reorder'}">
     <span class="me-rec-dot ${dotCls}" id="me-rd-${i}" title="${dotTip}"></span>
-    <span class="me-rec-type">${_TYPE_LABEL[r.type] || r.type}</span>
+    <span class="me-rec-type">${_TYPE_LABEL[r.type] || _escHtml(r.type)}</span>
     <span class="me-rec-sum">${_meRecSum(r)}</span>
     <span class="me-rec-acts" onclick="event.stopPropagation()">
       <button class="me-rb del" onclick="_meDelRec(${i})" title="Delete">&#x00D7;</button>
@@ -34829,8 +34901,8 @@ function _meRecSum(r) {
       const fmtLit = v => {
         if (!Array.isArray(v)) return `"${esc(v)}"`;
         return v.map(x => (x && typeof x === 'object' && x.from != null)
-          ? `"${x.from}".."${x.to}"`
-          : `"${x}"`).join(' | ');
+          ? `"${esc(x.from)}".."${esc(x.to)}"`
+          : `"${esc(x)}"`).join(' | ');
       };
       return wrap(`@${r.offset}${r.encoding&&r.encoding!=='ascii'?` [${r.encoding}]`:''} = ${fmtLit(r.value)}`);
     }
@@ -36132,9 +36204,9 @@ function _meRecFields(r, id) {
        id="me-rv-${k}-${id}" value="${ea(r[k] != null ? r[k] : def != null ? def : 0)}"></div>`;
   const tf = (k, lbl, ph, w) => w
     ? `<div class="me-rf-fld"><div class="me-lbl">${lbl}</div>
-       <input class="me-inp" style="width:${w}" id="me-rv-${k}-${id}" type="text" value="${ea(r[k])}"></div>`
+       <input class="me-inp" style="width:${w}" id="me-rv-${k}-${id}" type="text"${ph ? ` placeholder="${ea(ph)}"` : ''} value="${ea(r[k])}"></div>`
     : `<div style="flex:1;min-width:120px;display:flex;flex-direction:column;gap:3px"><div class="me-lbl">${lbl}</div>
-       <input class="me-inp" style="width:100%;box-sizing:border-box" id="me-rv-${k}-${id}" type="text" value="${ea(r[k])}"></div>`;
+       <input class="me-inp" style="width:100%;box-sizing:border-box" id="me-rv-${k}-${id}" type="text"${ph ? ` placeholder="${ea(ph)}"` : ''} value="${ea(r[k])}"></div>`;
   const opf = k => {
     const cur = r[k] || '=';
     return `<div class="me-rf-fld"><div class="me-lbl">Op</div>
@@ -41055,6 +41127,7 @@ function _meExecBlock(block, ctx) {
     if (r.error) {
       ctx.fields.push({ id: attrs.field || type, error: r.error });
       ctx.blockOverrides = _prevOvr;
+      ctx._inlineMap = _prevInlineMap;
       return;
     }
     if (attrs.peek) _peekReturn = ctx.cursor;
@@ -43346,7 +43419,7 @@ function _meRunTest(opts) {
     if (!rawBytes.length) throw new Error('no bytes could be extracted');
     bytes      = rawBytes;                  // recognizers + the input dump run on RAW bytes
   } catch(e) {
-    out.innerHTML = `<div class="me-test-err">Input error: ${e.message}</div>`;
+    out.innerHTML = `<div class="me-test-err">Input error: ${_escHtml(e.message)}</div>`;
     _meTestVerdict(summ, '⚠ input error', false);
     return;
   }

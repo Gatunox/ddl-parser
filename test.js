@@ -1777,7 +1777,7 @@ test('a record with no DDL is sent to the binding, not to the tree', () => {
     'and scrolled to, since it sits below Identity and Recognizers');
 
   // The hint links there and names the class.
-  assert.ok(/a DDL to <strong>\$\{_escH\(_lbl\)\}<\/strong> in <span onclick="_meGoToBindings\(/.test(src),
+  assert.ok(/a DDL to <strong>\$\{_escH\(_lbl\)\}<\/strong> in <span data-lbl="\$\{esc\(_lbl\)\}" onclick="_meGoToBindings\(/.test(src),
     'the hint names the class and links to its bindings');
   assert.ok(/const _lbl = msg\._diag\?\.msgTypeLabel \|\| msg\.msgType\?\.label \|\| msg\.msgType\?\.type \|\| '';/.test(src),
     'the label falls back through the diagnostic and the msgType');
@@ -8054,7 +8054,7 @@ test('Track columns carry an autofilter of the values actually in them', () => {
     'every column but # gets a filter — # is unique per row, so filtering by it picks one row the hard way');
   assert.ok(/for \(let i = 0; i < S\.messages\.length; i\+\+\) seen\.add\(cellValue\(S\.messages\[i\], col, i\)\);/.test(render),
     'the options must be what the column HOLDS, not a guess at what it might');
-  assert.ok(/<option value=""\$\{cur === '' \? ' selected' : ''\}>\(all\)<\/option>/.test(render),
+  assert.ok(/<option value=""\$\{!on \? ' selected' : ''\}>\(all\)<\/option>/.test(render),
     'blank means no filter and has to be selectable again');
   // One place decides what a row holds in a column: the option list, the cell
   // and the match test read it, and a value they disagreed about would be a
@@ -8071,15 +8071,17 @@ test('Track columns carry an autofilter of the values actually in them', () => {
   assert.ok(/if \(String\(have\) !== want\) return false;/.test(psFnSource('_trackRowShown')),
     'several filters must read as AND, the way a spreadsheet does');
   const chg = psFnSource('trackFilterChange');
-  assert.ok(/if \(sel\.value === ''\) \{ delete S\.trackFilters\[col\]; sel\.removeAttribute\('data-on'\); \}/.test(chg),
-    'choosing blank must remove the filter, not store an empty one');
+  // "(all)" removes it; "(empty)" — the same value "" but marked data-empty —
+  // filters to empty cells.
+  assert.ok(/if \(all\) \{ delete S\.trackFilters\[col\]; sel\.removeAttribute\('data-on'\); \}/.test(chg),
+    'choosing "(all)" must remove the filter, not store an empty one');
   // "(all)" is the resting state and must look like one: the accent marks the
   // columns that are actually narrowing the list. Reported 2026-08-28.
   assert.ok(/sel\.setAttribute\('data-on', ''\)/.test(chg), 'a live filter must mark itself');
   const src = fs.readFileSync('./source.html', 'utf8');
   assert.ok(/\.track-tbl select\.trk-filter\[data-on\] \{ color: var\(--accent\); border-color: var\(--accent\); \}/.test(src),
     'the accent belongs to the filters that are on, not to every column');
-  assert.ok(/\$\{cur \? ' data-on' : ''\}/.test(psFnSource('renderTracking')),
+  assert.ok(/\$\{on \? ' data-on' : ''\}/.test(psFnSource('renderTracking')),
     'a filter still set when the table redraws must come back marked');
   assert.ok(!/trackPicked/.test(chg), 'filtering must not touch the picks — hiding a row does not unpick it');
 });
@@ -14917,8 +14919,9 @@ test('Parse Results carries an Offset column too, after Size', () => {
   // one column hides a different one.
   for (const [needle, why] of [
     ["['id','desc','len','off','val','raw','trk']", 'the width/visibility sync'],
-    ["layout.hiddenCols = ['id','desc','len','off','val','trk']", 'the saved layout'],
-    ["['id','desc','len','off','val','trk'].forEach(c => container.classList.remove", 'Reset Layout'],
+    ["const _RES_HIDE_COLS = ['id','desc','len','off','val','trk'];", 'the hideable-column list'],
+    ["layout.hiddenCols = _RES_HIDE_COLS", 'the saved layout'],
+    ["_RES_HIDE_COLS.forEach(c => container.classList.remove", 'Reset Layout'],
     // The widths live in the shared registry now — Reset Layout used to carry a
     // hand-written copy that had already drifted (desc 180 there against 220 in
     // the markup), and it is the registry every path reads.
@@ -27399,6 +27402,166 @@ console.log('\nreview 2026-11-11 — high fixes');
       elStubs['me-rt-0'] = { value: 'hex-density' };
       eq(run('_meRecRead')(0).length, 1, 'hex-density too');
     } finally { for (const k in saved) { if (saved[k] === undefined) delete elStubs[k]; else elStubs[k] = saved[k]; } }
+  });
+}
+
+console.log('\nreview 2026-11-11 — medium and low fixes');
+{
+  const run = c => vm.runInContext(c, sandbox);
+  const withFn = (name, fn, body) => {
+    sandbox.__orig = run(name); sandbox.__repl = fn;
+    run(`${name} = __repl`);
+    try { return body(); } finally { run(`${name} = __orig`); }
+  };
+  const withEl = (id, el, body) => {
+    const was = elStubs[id]; elStubs[id] = el;
+    try { return body(); } finally { if (was === undefined) delete elStubs[id]; else elStubs[id] = was; }
+  };
+
+  test('[REGRESSION] Track: "(empty)" filters to empty cells, it is not "(all)"', () => {
+    // Both options had value "", so picking "(empty)" deleted the filter.
+    const S0 = run('S'), was = { f: S0.trackFilters, m: S0.messages };
+    try {
+      S0.trackFilters = {};
+      S0.messages = [{ fields: [{ id: 'X', value: '' }] }, { fields: [{ id: 'X', value: 'a' }] }];
+      const sel = (empty) => ({ dataset: { col: 'f:X' }, value: '', selectedIndex: 0,
+        options: [{ hasAttribute: k => k === 'data-empty' && empty }], setAttribute() {}, removeAttribute() {} });
+      run('trackFilterChange')(sel(true));
+      eq(S0.trackFilters['f:X'], '', 'the empty value is a filter');
+      eq(run('_trackRowShown')(0), true, 'the empty cell is shown');
+      eq(run('_trackRowShown')(1), false, 'the filled one is hidden');
+      run('trackFilterChange')(sel(false));
+      eq('f:X' in S0.trackFilters, false, '"(all)" still clears it');
+    } finally { S0.trackFilters = was.f; S0.messages = was.m; }
+  });
+
+  test('[REGRESSION] Track: a filter on a column no longer tracked is dropped', () => {
+    // The select went with the column, the filter stayed and kept hiding rows.
+    const S0 = run('S'), was = { f: S0.trackFilters, t: S0.trackedFields };
+    try {
+      S0.trackedFields = new Set();
+      S0.trackFilters = { 'f:X': 'a', ts: 'b' };
+      run('renderTracking')();
+      eq('f:X' in S0.trackFilters, false, 'the untracked column\'s filter is gone');
+    } finally { S0.trackFilters = was.f; S0.trackedFields = was.t; }
+  });
+
+  test('[REGRESSION] arrow keys inside a <select> are left to the select', () => {
+    assert.ok(/if \(tag === 'INPUT' \|\| tag === 'TEXTAREA' \|\| tag === 'SELECT'\) return;/.test(APP_SRC), 'field navigation steals a select\'s arrows');
+    assert.ok(/_aTag !== 'TEXTAREA' && _aTag !== 'SELECT'/.test(APP_SRC), 'the audit popup steals them too');
+  });
+
+  test('[REGRESSION] Reset Layout and the picker checkmarks include the Offset column', () => {
+    deepEq([...run('_RES_HIDE_COLS')].sort(), ['desc', 'id', 'len', 'off', 'trk', 'val'], 'one list, with Offset');
+    assert.ok(!/\['id','desc','len','val','trk'\]/.test(APP_SRC), 'a hand-written list without Offset is back');
+    assert.ok(/function resetLayout[\s\S]{0,1500}_RES_HIDE_COLS\.forEach\(c => container\.classList\.remove/.test(APP_SRC), 'Reset Layout does not use it');
+  });
+
+  test('[REGRESSION] CLASS override: a missing armed class keeps its own label as the value', () => {
+    // The option's value was "X  (missing)" while sel.value was set to "X": the
+    // select read blank, and picking it armed "X  (missing)", which grew a
+    // second suffix on the next draw.
+    assert.ok(/_missing \? `<option value="\$\{esc\(armed\)\}">\$\{esc\(_missing\)\}<\/option>`/.test(APP_SRC), 'the option value is not the armed label');
+  });
+
+  test('[REGRESSION] Baselines: a picked tag nobody carries any more is unpicked', () => {
+    // With no chip left to click, the AND filter emptied the list for good.
+    const picked = run('_blPickedTags');
+    picked.clear(); picked.add('gone'); picked.add('kept');
+    try {
+      withFn('_blAll', () => [{ id: 'b1', name: 'n', tags: ['Kept'], fields: [], byteCount: 0 }], () => run('blRenderSidebar')());
+      deepEq([...picked], ['kept'], 'only the live tag stays picked');
+    } finally { picked.clear(); }
+  });
+
+  test('[REGRESSION] Audit: a file that cannot be read says so', () => {
+    // The worker's read failure carried no offset, and the pane said "Scan
+    // stopped at offset 0x0 … truncated or a different header layout".
+    assert.ok(/type: 'error', readError: true, msg: err && err\.message/.test(APP_SRC), 'the worker does not mark a read failure');
+    const list = {};
+    withEl('auditRecordList', list, () => run('_auditOnScanError')({ type: 'error', readError: true, msg: 'denied <x>' }));
+    assert.ok(/Could not read the file: denied &lt;x&gt;/.test(list.innerHTML), 'the message is not the read error');
+    assert.ok(!/offset/.test(list.innerHTML), 'it still talks about an offset');
+  });
+
+  test('[REGRESSION] Audit: date and time bound one instant, so a range can cross midnight', () => {
+    // Tested apart, "15 22:00 → 16 02:00" kept 02:00–22:00 of each day.
+    const R = run('_auditDtRange');
+    const at = (d, h, m) => d * 1440 + h * 60 + m;
+    const r = R(251115, 22 * 60, 251116, 2 * 60);
+    const inR = t => t >= r.lo && t <= r.hi;
+    eq(inR(at(251115, 23, 0)), true, '23:00 on the 15th is inside');
+    eq(inR(at(251116, 1, 30)), true, '01:30 on the 16th is inside');
+    eq(inR(at(251115, 12, 0)), false, 'noon on the 15th is outside');
+    eq(JSON.stringify(R(251116, 2 * 60, 251115, 22 * 60)), JSON.stringify(r), 'From and To in either box');
+    eq(JSON.stringify(R(251115, null, null, null)), JSON.stringify({ lo: at(251115, 0, 0), hi: at(251115, 23, 59) }), 'one date alone is that whole day');
+    eq(R(null, 60, null, 120), null, 'times alone stay a time-of-day filter');
+    assert.ok(/if \(at < _dtRange\.lo \|\| at > _dtRange\.hi\) return false;/.test(APP_SRC), 'the filter does not use it');
+  });
+
+  test('[REGRESSION] free text from classes is escaped where it lands in markup', () => {
+    eq(run('_btypeStyle')('red" onmouseover="alert(1)'), '', 'a colour that closes the attribute is dropped');
+    eq(run('_btypeStyle')('#1a2b3c'), 'color:#1a2b3c;border-color:#1a2b3c', 'a plain colour still works');
+    const sum = run('_meRecSum')({ type: 'literal', offset: 0, value: ['<ISO', { from: '<a', to: '<b' }] });
+    assert.ok(!/<ISO|<a|<b/.test(sum) && /&lt;ISO/.test(sum), 'a list or range literal is not escaped: ' + sum);
+    assert.ok(/<span data-lbl="\$\{esc\(_lbl\)\}" onclick="_meGoToBindings\(this\.dataset\.lbl\)"/.test(APP_SRC), 'the class label is still spliced into a JS string');
+    assert.ok(/Input error: \$\{_escHtml\(e\.message\)\}/.test(APP_SRC), 'the Test input error is not escaped');
+  });
+
+  test('[REGRESSION] tree names: no "/" or empty name, and Paste normalises like New and Rename', () => {
+    const F = run('_treeName');
+    eq(F('  abc '), 'ABC', 'trimmed and upper-cased');
+    eq(F('   '), null, 'empty refused');
+    eq(F('A/B'), null, 'a slash refused');
+    const st = run('S'), was = st.ddlTree;
+    try {
+      st.ddlTree = { V: { S1: {} } };
+      st.clipboard = { type: 'ddl', name: 'X', content: 'DEF X PIC X.' };
+      withFn('showPrompt', (t, d, cb) => cb(' abc '), () =>
+        withFn('saveTree', () => {}, () => withFn('selectScope', () => {}, () => run('ctxPasteDdl')('V', 'S1'))));
+      deepEq(Object.keys(st.ddlTree.V.S1), ['ABC'], 'the pasted file is named as New would name it');
+    } finally { st.ddlTree = was; st.clipboard = null; run('_ddlTreeVersion++'); }
+  });
+
+  test('[REGRESSION] tree clicks survive an apostrophe in a name', () => {
+    // esc() leaves "'" alone, so selectScope('def',…,'O'B') was a syntax error.
+    const body = APP_SRC.slice(APP_SRC.indexOf('function renderDDLTree() {'));
+    const fn = body.slice(0, body.indexOf('\n}\n'));
+    { const _m = fn.match(/.{0,80}'\$\{esc\(.{0,60}/); assert.ok(!_m, 'a name goes into a JS string through esc() alone: ' + (_m && _m[0])); }
+    assert.ok(/const jsq = s => esc\(String\(s\)\.replace\(\/\\\\\/g, '\\\\\\\\'\)\.replace\(\/'\/g, "\\\\'"\)\);/.test(fn), 'the JS-string escape is gone');
+  });
+
+  test('[REGRESSION] recognizer inputs show their placeholder', () => {
+    const st = meState();
+    try {
+      setMeState({ specs: [{ name: 'A', recognizers: [] }], selIdx: 0, sections: {} });
+      assert.ok(/placeholder="JavaScript regex"/.test(run('_meRecFields')({ type: 'regex' }, 0)), 'the hint is never written');
+      assert.ok(/placeholder="e\.g\. F0"/.test(run('_meRecFields')({ type: 'uint8' }, 0) + run('_meRecFields')({ type: 'byte' }, 0)), 'the narrow box drops it too');
+    } finally { setMeState(st); }
+  });
+
+  test('[REGRESSION] Size 0 is not stored as an override', () => {
+    // Every reader takes 0 as "no size", so it was a counted, exported ghost.
+    const ed = run('_ME_FM_ED').bytes;
+    eq(ed.noop({ declaredLen: 4 }, '0'), true, '0 is treated as clear');
+    eq(ed.noop({ declaredLen: 4 }, '4'), true, 'the declared length still is');
+    eq(ed.noop({ declaredLen: 4 }, '6'), false, 'a real size is stored');
+  });
+
+  test('[REGRESSION] an "at" that cannot resolve does not leak the read\'s inline map', () => {
+    const item = { ddl_bindings: [], parse_spec_binary: [
+      { read: { field: 'X', map: 'DEF', at: { field: 'NOT-READ' } } } ] };
+    const ctx = sandbox._meExecParseSpec(item, Buffer.from('ABCD'));
+    eq(ctx._inlineMap, undefined, 'the map outlived its block');
+    assert.ok(ctx.fields.some(f => f.id === 'X' && f.error), 'the at error is reported');
+  });
+
+  test('[REGRESSION] Copy of a single-line DEF copies that DEF alone', () => {
+    // It had no END, so it ran to the next definition's END and took it along.
+    const defs = run('splitHPEDDL')('DEF A PIC X(3).\nDEF B.\n02 F PIC X.\nEND\nDEF C TYPE BINARY 16.\n');
+    deepEq(defs.map(d => d.name), ['A', 'B', 'C'], 'three definitions');
+    eq(defs[0].content, 'DEF A PIC X(3).', 'A alone');
+    eq(defs[1].content, 'DEF B.\n02 F PIC X.\nEND', 'B whole');
   });
 }
 // ── Summary ───────────────────────────────────────────────────────────────────

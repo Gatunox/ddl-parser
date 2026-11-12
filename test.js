@@ -27791,6 +27791,45 @@ console.log('\nDDL tree — Delete on a DEF');
     }
   });
 
+  test('[REGRESSION] Rename on a DEF renames that DEF, not its file', () => {
+    // It renamed the FILE the DEF sits in.
+    const R = run('_renameDefInText');
+    eq(R(FILE, 'B', 'NEW-B'), FILE.replace('DEF B.', 'DEF NEW-B.'), 'only the DEF line changes, the dot stays');
+    eq(R(FILE, 'C', 'CC'), FILE.replace('DEF C PIC X(3).', 'DEF CC PIC X(3).'), 'a single-line DEF');
+    eq(R('  definition is e.\n02 Q PIC X.\nEND', 'E', 'EE'), '  definition is EE.\n02 Q PIC X.\nEND', 'the IS form, indentation kept');
+    eq(R(FILE, 'NOPE', 'X'), null, 'a DEF that is not there');
+    const st = run('S');
+    const was = { tree: st.ddlTree, scope: st.scope, ov: st.deOverrides, ex: st.excl, po: st.parseOverride };
+    try {
+      st.ddlTree = { V: { S1: { F: FILE, G: 'DEF U.\n02 R TYPE B.\nEND' } } };
+      st.scope = { type: 'def', vol: 'V', sv: 'S1', name: 'F', defName: 'B' };
+      st.deOverrides = { 'V/S1/F/B': { 1: {} } };
+      st.excl = new Set(['V/S1/F/B']);
+      st.parseOverride = null;
+      let said = '', sel = null;
+      const rename = nm => withFn('showPrompt', (q, def, cb) => cb(nm), () =>
+        withFn('_ddlEditorDirty', () => false, () => withFn('saveTree', () => {}, () =>
+          withFn('selectScope', (...a) => { sel = a; }, () => withFn('flash', m => { said = m; }, () =>
+            run('ctxRenameDef')('V', 'S1', 'F', 'B'))))));
+      rename('D');
+      eq(st.ddlTree.V.S1.F, FILE, 'a name taken in the file was used');
+      assert.ok(/already exists/.test(said), said);
+      rename('1BAD');
+      eq(st.ddlTree.V.S1.F, FILE, 'an invalid name was used');
+      rename('new-b');
+      assert.ok(st.ddlTree.V.S1.F != null && !st.ddlTree.V.S1['NEW-B'], 'the file was renamed');
+      eq(st.ddlTree.V.S1.F, FILE.replace('DEF B.', 'DEF NEW-B.'), 'the DEF was not renamed');
+      eq(JSON.stringify(Object.keys(st.deOverrides)), '["V/S1/F/NEW-B"]', 'its DE overrides did not follow');
+      assert.ok(st.excl.has('V/S1/F/NEW-B'), 'its exclusion did not follow');
+      eq(JSON.stringify(sel), '["def","V","S1","F","NEW-B"]', 'the renamed DEF is not selected');
+      assert.ok(/1 TYPE reference still name "B"/.test(said), 'the reference left behind is not mentioned: ' + said);
+    } finally {
+      st.ddlTree = was.tree; st.scope = was.scope; st.deOverrides = was.ov; st.excl = was.ex; st.parseOverride = was.po;
+      run('_ddlTreeVersion++');
+    }
+    assert.ok(/label: 'Rename DEF…',\s*fn: \(\) => ctxRenameDef\(/.test(APP_SRC), 'the menu on a DEF does not rename the DEF');
+  });
+
   test('[REGRESSION] Delete on a DEF waits while the editor has unsaved changes', () => {
     const st = run('S'), was = { tree: st.ddlTree, scope: st.scope };
     try {

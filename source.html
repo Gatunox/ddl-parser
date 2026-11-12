@@ -21326,28 +21326,41 @@ function saveDDL() {
 // splitHPEDDL reads it with. The comments and ?SECTION lines before it stay —
 // they may belong to more than this definition. One blank line is folded where
 // the block was, so the gap does not double. null when the DEF is not there.
-function _removeDefFromText(text, defName) {
-  const lines = String(text || '').split('\n');
+// Where one definition sits in a file's lines, by the rules splitHPEDDL reads
+// it with: { start, end, nameAt, nameLen } — nameAt/nameLen locate the name on
+// the DEF line — or null when it is not there.
+function _locateDefInLines(lines, defName) {
   const want = String(defName || '').toUpperCase();
-  let start = -1, end = -1, cur = null, curStart = -1;
-  for (let i = 0; i < lines.length && end < 0; i++) {
+  let cur = null;   // the multi-line DEF being read: { name, start, nameAt, nameLen }
+  for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     if (cur) {
-      if (/^\s*END\b/i.test(line)) { if (cur === want) { start = curStart; end = i; } cur = null; }
+      if (/^\s*END\b/i.test(line)) {
+        if (cur.name === want) return { start: cur.start, end: i, nameAt: cur.nameAt, nameLen: cur.nameLen };
+        cur = null;
+      }
       continue;
     }
-    const m = line.match(/^\s*(?:DEF|DEFINITION|RECORD)\s+(\S+)/i);
+    let m = line.match(/^\s*(?:DEF|DEFINITION|RECORD)\s+(\S+)/i);
     if (!m) continue;
-    let nm = m[1].replace(/\.$/, '').toUpperCase();
-    if (nm === 'IS') { const m2 = line.match(/^\s*(?:DEF|DEFINITION|RECORD)\s+IS\s+(\S+)/i); if (m2) nm = m2[1].replace(/\.$/, '').toUpperCase(); }
-    const rest = line.slice(m.index + m[0].length);
+    const rest = line.slice(m[0].length);
+    if (/^IS\.?$/i.test(m[1])) m = line.match(/^\s*(?:DEF|DEFINITION|RECORD)\s+IS\s+(\S+)/i) || m;
+    const raw = m[1].replace(/\.$/, '');
+    const def = { name: raw.toUpperCase(), start: i, nameAt: m[0].length - m[1].length, nameLen: raw.length };
     if (/\b(?:PIC(?:TURE)?|TYPE)\b/i.test(rest) && /\.\s*$/.test(line)) {
-      if (nm === want) { start = end = i; }
+      if (def.name === want) return { start: i, end: i, nameAt: def.nameAt, nameLen: def.nameLen };
       continue;
     }
-    cur = nm; curStart = i;
+    cur = def;
   }
-  if (start < 0) return null;
+  return null;
+}
+
+function _removeDefFromText(text, defName) {
+  const lines = String(text || '').split('\n');
+  const loc = _locateDefInLines(lines, defName);
+  if (!loc) return null;
+  const { start, end } = loc;
   lines.splice(start, end - start + 1);
   if (start > 0 && start < lines.length && !lines[start - 1].trim() && !lines[start].trim()) lines.splice(start, 1);
   return lines.join('\n');
@@ -21491,7 +21504,9 @@ function buildCtxMenu(e) {
       items.push({ icon: '⎘', label: t === 'ddl' ? `Copy  "${name}"` : `Copy  "${defName}"`, fn: t === 'ddl' ? () => ctxCopyDdl(vol, sv, name) : () => ctxCopyDef(vol, sv, name, defName) });
       items.push({ icon: '⬆', label: 'Export…', fn: () => ctxExport(vol, sv, name) });
       items.push({ separator: true });
-      items.push({ icon: '✎', label: 'Rename…',    fn: () => ctxRenameDdl(vol, sv, name) });
+      items.push(t === 'def' && defName
+        ? { icon: '✎', label: 'Rename DEF…',  fn: () => ctxRenameDef(vol, sv, name, defName) }
+        : { icon: '✎', label: 'Rename File…', fn: () => ctxRenameDdl(vol, sv, name) });
       items.push({ separator: true });
       // The opposite of "Exclude … from parsing": one DDL put deliberately in
       // charge. Selecting a node no longer does this on its own, so opening a DDL
@@ -21621,6 +21636,47 @@ function ctxRenameSv(vol, sv) {
     flash(`Renamed to "${newName}"`);
   });
 }
+// The text of an HPE DDL file with one definition renamed: only the name on
+// its DEF line changes, as the user typed it. null when the DEF is not there.
+function _renameDefInText(text, oldName, newName) {
+  const lines = String(text || '').split('\n');
+  const loc = _locateDefInLines(lines, oldName);
+  if (!loc) return null;
+  const l = lines[loc.start];
+  lines[loc.start] = l.slice(0, loc.nameAt) + newName + l.slice(loc.nameAt + loc.nameLen);
+  return lines.join('\n');
+}
+
+// Rename on a DEF node renames that definition. It used to rename the FILE it
+// sits in — the same menu, the same prompt, a different thing. Other
+// definitions that name it in a TYPE keep the old name; the user is told how
+// many, and the tree's unresolved-reference badges point at them.
+// Requested 2026-11-12.
+function ctxRenameDef(vol, sv, name, defName) {
+  const text = S.ddlTree[vol]?.[sv]?.[name];
+  if (text == null) return;
+  if (_ddlEditorDirty()) { flash('Save or discard the editor changes first — the file is about to change', 'warn'); return; }
+  showPrompt('Rename DEF:', defName, raw => {
+    const newName = _treeName(raw);
+    if (!newName || newName === String(defName).toUpperCase()) return;
+    if (!/^[A-Z][A-Z0-9^-]*$/.test(newName)) { flash('A DDL name is letters, digits, "-" and "^", starting with a letter', 'warn'); return; }
+    if (_locateDefInLines(String(text).split('\n'), newName)) { flash(`DEF "${newName}" already exists in ${name}`, 'warn'); return; }
+    const next = _renameDefInText(text, defName, newName);
+    if (next == null) { flash(`DEF "${defName}" was not found in ${name}`, 'warn'); return; }
+    S.ddlTree[vol][sv][name] = next;
+    _movePathState([vol, sv, name, defName], [vol, sv, name, newName]);
+    saveTree(); buildUnresolvedRefs();
+    selectScope('def', vol, sv, name, newName);
+    const re = new RegExp('\\bTYPE\\s+' + String(defName).replace(/[\^-]/g, '\\$&') + '(?![\\w^-])', 'i');
+    let refs = 0;
+    for (const v of Object.values(S.ddlTree)) for (const d of Object.values(v || {}))
+      for (const t of Object.values(d || {})) if (typeof t === 'string')
+        for (const ln of t.split('\n')) if (re.test(ln)) refs++;
+    if (refs) flash(`Renamed DEF to "${newName}" — ${refs} TYPE reference${refs !== 1 ? 's' : ''} still name "${defName}"`, 'warn');
+    else flash(`Renamed DEF to "${newName}"`);
+  });
+}
+
 function ctxRenameDdl(vol, sv, name) {
   showPrompt('Rename DDL:', name, newName => {
     newName = _treeName(newName);
@@ -22783,7 +22839,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.64.10.0';
+const APP_VERSION  = '1.64.10.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

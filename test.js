@@ -28699,6 +28699,46 @@ console.log('\nParse Spec — one format toggle');
     }
   });
 }
+console.log('\nParse Spec — layout is not an edit');
+{
+  const run = c => vm.runInContext(c, sandbox);
+  test('[REGRESSION] Compact / Expand ask for no Save; a real edit still does', () => {
+    // Pressing the toggle rewrote the text and marked the class unsaved, though the spec was the same.
+    const keep = run('_meState');
+    const src = run('_expandJsonc')('[\n  // header\n  { "read": "A" },\n  { "skip": { "length": 9 } }\n]');
+    const it = { name: 'A', label: 'A', parse_spec_binary: [{ read: 'A' }, { skip: { length: 9 } }], parse_spec_binary_source: src };
+    let dirty = 0;
+    sandbox.__ms = { specs: [it], selIdx: 0, dirty: false, sections: {}, parseSpecVariant: 'binary' };
+    run('_meState = __ms; __osd = _meSetDirty; _meSetDirty = () => { __dirty++; }; __dirty = 0');
+    try {
+      const compact = run('_compactJsonc(_expandJsonc(' + JSON.stringify(src) + '))');
+      assert.ok(compact !== src, 'the sample does not change shape');
+      run('_mePsChange')(compact);
+      dirty = run('__dirty');
+      eq(dirty, 0, 'Compact asked for a Save');
+      eq(it.parse_spec_binary_source, src, 'the stored text was rewritten by a layout change');
+      run('_mePsChange')(src);                       // ↶ back to the stored layout
+      eq(run('__dirty'), 0, 'undoing the layout asked for a Save');
+      run('_mePsChange')(src.replace('// header', '// header, edited'));
+      eq(run('__dirty'), 1, 'a comment edit did not ask for a Save');
+      run('_mePsChange')(src.replace(/"length":\s*9/, '"length": 10'));
+      eq(run('__dirty'), 2, 'a value edit did not ask for a Save');
+      eq(JSON.stringify(it.parse_spec_binary[1]), '{"skip":{"length":10}}', 'the edit did not reach the class');
+    } finally { run('_meSetDirty = __osd'); sandbox.__ms = keep; run('_meState = __ms'); }
+  });
+
+  test('[REGRESSION] a spec opens in the layout chosen last', () => {
+    const src = '[\n  { "read": "A" },\n  { "skip": { "length": 9 } }\n]';
+    sandbox.__k = storage.getItem('up_me_ps_fmt');
+    try {
+      storage.setItem('up_me_ps_fmt', 'compact');
+      eq(run('_mePsShapeText')(src), run('_compactJsonc(_expandJsonc(' + JSON.stringify(src) + '))'), 'not shown compact');
+      storage.setItem('up_me_ps_fmt', 'expanded');
+      eq(run('_mePsShapeText')(src), run('_expandJsonc(' + JSON.stringify(src) + ')'), 'not shown expanded');
+    } finally { if (sandbox.__k === null) storage.removeItem('up_me_ps_fmt'); else storage.setItem('up_me_ps_fmt', sandbox.__k); }
+    assert.ok(/: _mePsShapeText\(\(typeof item\[srcField\] === 'string'/.test(psFnSource('_mePsMountCM')), 'the editor mounts the stored layout');
+  });
+}
 // ── Summary ───────────────────────────────────────────────────────────────────
 console.log(`\n${'─'.repeat(50)}`);
 if (failed === 0) {

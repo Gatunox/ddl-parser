@@ -23688,7 +23688,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.69.0.4';
+const APP_VERSION  = '1.69.0.5';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -30067,6 +30067,20 @@ function _mePsCopyText() {
   return Array.isArray(item[spec]) && item[spec].length ? JSON.stringify(item[spec], null, 2) : '';
 }
 
+// Compact / Expand only lays the spec out differently: the blocks, the values
+// and the comments are the same, so nothing is owed a Save. Two texts are the
+// same spec when they expand to the same text — that keeps a comment edit a real
+// change while any layout is not. Requested 2026-11-13.
+function _mePsSameSpecText(a, b) {
+  try { return _expandJsonc(a || '') === _expandJsonc(b || ''); } catch (e) { return false; }
+}
+// The stored text shown in the layout chosen last, so a spec opens Compact or
+// Expanded as the toggle was left — the layout is a view, not part of the class.
+function _mePsShapeText(t) {
+  try { const e = _expandJsonc(t || ''); return _mePsFmtMode() === 'compact' ? _compactJsonc(e) : e; }
+  catch (e) { return t; }
+}
+
 function _mePsChange(val) {
   const item = _meCurItem();
   if (!item) return;
@@ -30076,6 +30090,16 @@ function _mePsChange(val) {
     const stripped = _stripJsonc(val || '[]');
     const parsed   = JSON.parse(stripped);
     if (!Array.isArray(parsed)) throw new Error('top-level value must be an array');
+    // Only the layout moved (Compact / Expand, or ↶ of one): the class keeps
+    // what it holds and nothing is owed a Save.
+    const stored = (typeof item[srcField] === 'string' && item[srcField].trim())
+      ? item[srcField] : JSON.stringify(item[specField] || [], null, 2);
+    if (JSON.stringify(parsed) === JSON.stringify(item[specField] || []) && _mePsSameSpecText(val, stored)) {
+      _mePsDraftSet(item, variant, null);
+      _mePsSetErr('');
+      _mePsScheduleLint(item, parsed);
+      return;
+    }
     item[specField] = parsed;
     item[srcField]  = val;   // preserve comments + trailing commas
     _mePsDraftSet(item, variant, null);
@@ -31314,9 +31338,9 @@ function _mePsMountCM(item) {
   // An unfinished (invalid) edit comes back as it was left — see _mePsDrafts.
   const draft = _mePsDraftGet(item, _mePsActiveVariant());
   const initial = draft != null ? draft
-    : (typeof item[srcField] === 'string' && item[srcField].trim())
-    ? item[srcField]
-    : JSON.stringify(item[specField] || [], null, 2);
+    : _mePsShapeText((typeof item[srcField] === 'string' && item[srcField].trim())
+        ? item[srcField]
+        : JSON.stringify(item[specField] || [], null, 2));
   // Same Tab override as the DDL editor: insert a literal tab at the cursor
   // rather than reindenting the line.
   const _tabInsertKey = { key: 'Tab', preventDefault: true,
@@ -45664,7 +45688,7 @@ function _meSave() {
               <li><strong>Identity</strong> — type code (up to 5 characters), label, volume and colour</li>
               <li><strong>Recognizers</strong> — the conditions that identify the class (see <em>Detection</em>)</li>
               <li><strong>DDL Bindings</strong> — the DDLs this class is parsed with; the first is the default</li>
-              <li><strong>Parse Spec</strong> — the steps that walk the bytes: fixed reads, bitmaps, tokens, TLV, segments, <code>when</code> conditions and more. <strong>Compact</strong> puts each block on one line and <strong>Expand</strong> gives each attribute its own; the button names what it will do, keeps comments, and ↶ undoes it</li>
+              <li><strong>Parse Spec</strong> — the steps that walk the bytes: fixed reads, bitmaps, tokens, TLV, segments, <code>when</code> conditions and more. <strong>Compact</strong> puts each block on one line and <strong>Expand</strong> gives each attribute its own; the button names what it will do, keeps comments, and ↶ undoes it. It only changes the layout, so it asks for no Save, and every spec opens in the layout chosen last</li>
               <li><strong>Business Rules</strong> — what the business requires of a message, such as <em>a network management message must carry DE-70</em>: <em>When</em> some conditions hold, others <em>Must hold</em>. Each parsed message gets a <em>rules</em> badge beside its type — green when every rule that applies passes, amber when some fail, red when all do; click it for what failed. A rule with a <em>Tag name</em> also shows that tag beside the type when it is met; one with only <em>When</em> and a tag just labels the messages it matches, such as <em>RECURRING</em> or <em>REVERSAL</em></li>
               <li><strong>Overrides</strong> — per field: <strong>TYPE</strong> (how the bytes are read), <strong>SHOW</strong> (display only), <strong>SIZE</strong>, <strong>DE</strong> (data-element number) and <strong>VLG</strong> (where a variable length comes from)</li>
               <li><strong>↶ Undo</strong> — removing overrides (one field's or many), a DDL binding, a recognizer or a business rule, clearing the DEs, and deleting a class each leave a notice with <strong>↶ Undo</strong> that puts it back as it was. Deleting a class still asks you to type DELETE first</li>

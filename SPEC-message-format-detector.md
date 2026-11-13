@@ -2511,7 +2511,7 @@ class: its parse spec run in reverse, each block writing what it would read.
 | `up_me_fm_colvis` | Field Map column visibility — which columns the ⚙ chooser is showing |
 | `up_msg_export_cols` | Export Messages column selection — which of Field / Description / Value / Raw Hex the text file carries |
 | `up_msg_export_fmt` | Export Messages file format — `txt` (the readable layout, shaped by the column selection), `csv` (one row per message, one column per field) or `json` (every field with all it carries). A preference about the output, so it persists |
-| `up_me_ps_fmt` | Parse-spec **Format** shape — `compact` (one line per block) or `expanded` (one line per attribute). A reading preference, so it persists. |
+| `up_me_ps_fmt` | Parse-spec **Format** shape — `compact` (one line per block) or `expanded` (one line per attribute). A reading preference, so it persists. Every spec opens in this shape; changing it is not an edit and asks for no Save. |
 | `up_me_sidebar_w` | Class Editor Entities column width |
 | `up_bl_colvis` | Baselines table hidden columns. One entry per column PAIR — a column is the same column on both sides, so hiding it hides both halves and the mirrored layouts stay symmetric |
 | `up_bl_sidebar_collapsed` | Whether the Baselines Saved list is collapsed to a rail |

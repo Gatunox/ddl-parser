@@ -28548,6 +28548,25 @@ console.log('\nLog statistics — layout and a long list');
     assert.ok(/if \(first\) statsShow\(first\);/.test(open), 'the list starts empty');
   });
 }
+console.log('\nParse Results — the > hint');
+{
+  const run = c => vm.runInContext(c, sandbox);
+  test('[REGRESSION] any click in Parse Results stops the > button pulsing', () => {
+    // It pulsed until a move to another message, so Export, View or a row left it on.
+    let removed = 0;
+    const next = { classList: { remove: c => { if (c === 'attn-pulse') removed++; } } };
+    elStubs.msgNextBtn = next;
+    try {
+      run('_navHintOwed = true');
+      run('_navHintDone')({ target: { closest: sel => sel === '#resPanel' ? null : null } });
+      eq(run('_navHintOwed'), true, 'a click elsewhere ended the hint');
+      run('_navHintDone')({ target: { closest: sel => sel === '#resPanel' ? {} : null } });
+      eq(run('_navHintOwed'), false, 'a click in the panel did not end it');
+      eq(removed, 1, 'the button kept pulsing until the next redraw');
+    } finally { delete elStubs.msgNextBtn; run('_navHintOwed = false'); }
+    assert.ok(/document\.addEventListener\('click', _navHintDone, true\);/.test(APP_SRC), 'nothing listens for the click');
+  });
+}
 // ── Summary ───────────────────────────────────────────────────────────────────
 console.log(`\n${'─'.repeat(50)}`);
 if (failed === 0) {

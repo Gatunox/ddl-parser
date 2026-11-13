@@ -12926,6 +12926,16 @@ function _drainTypePickers(queue, sessionMappings, done) {
 // Editor's pulse, which stops when the thing it is asking for has been done.
 let _navHintOwed = false;
 
+// Any click in Parse Results — a button, a row — means the panel has been
+// found: the hint has done its job and stops. It used to wait for a move to
+// another message, so Export, View or a row left it pulsing. Requested 2026-11-12.
+function _navHintDone(e) {
+  if (!_navHintOwed || !e.target?.closest?.('#resPanel')) return;
+  _navHintOwed = false;
+  document.getElementById('msgNextBtn')?.classList.remove('attn-pulse');
+}
+document.addEventListener('click', _navHintDone, true);
+
 function _resetParseSelection() {
   _navHintOwed    = true;
   S.selFieldId    = null;
@@ -23624,7 +23634,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.68.0.1';
+const APP_VERSION  = '1.68.0.2';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {

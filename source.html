@@ -3795,6 +3795,18 @@ body.track-mode #recMetaRow { display: none !important; }
 /* The Parse Spec's toolbar IS the section's bar now, so it stops being a bare
    flex row with a margin and takes the shared strip. */
 .me-ps-bar{margin-bottom:0;}
+/* The format toggle keeps one width: its two labels share one grid cell. */
+#me-ps-fmt{display:inline-grid;justify-items:center;}
+#me-ps-fmt>span{grid-area:1/1;}
+#me-ps-fmt>.me-ps-fmt-off{visibility:hidden;}
+/* What the press will do, drawn: the lines close in (Compact) or open out
+   (Expand). Masked, so it takes the button's colour in every theme. */
+#me-ps-fmt>span{display:inline-flex;align-items:center;gap:5px;}
+.me-ps-ico{display:inline-block;width:1.1em;height:1.1em;flex-shrink:0;background-color:currentColor;
+  -webkit-mask-size:contain;mask-size:contain;-webkit-mask-repeat:no-repeat;mask-repeat:no-repeat;
+  -webkit-mask-position:center;mask-position:center;}
+.me-ps-ico-compact{-webkit-mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4.5 1.5l3.5 3.5 3.5-3.5M4.5 14.5l3.5-3.5 3.5 3.5M2 8h12'/%3E%3C/svg%3E");mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4.5 1.5l3.5 3.5 3.5-3.5M4.5 14.5l3.5-3.5 3.5 3.5M2 8h12'/%3E%3C/svg%3E");}
+.me-ps-ico-expand{-webkit-mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4.5 5l3.5-3.5 3.5 3.5M4.5 11l3.5 3.5 3.5-3.5M2 8h12'/%3E%3C/svg%3E");mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4.5 5l3.5-3.5 3.5 3.5M4.5 11l3.5 3.5 3.5-3.5M2 8h12'/%3E%3C/svg%3E");}
 /* Format button glyph — indented code lines, masked SVG so it follows currentColor */
 .me-ps-fmt-ico{display:inline-block;width:1em;height:1em;vertical-align:-0.15em;background-color:currentColor;
   -webkit-mask-size:contain;mask-size:contain;-webkit-mask-repeat:no-repeat;mask-repeat:no-repeat;
@@ -23676,7 +23688,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.69.0.2';
+const APP_VERSION  = '1.69.0.4';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -31640,18 +31652,24 @@ function _mePsFmtMode() {
   try { return localStorage.getItem(_ME_PS_FMT_KEY) === 'compact' ? 'compact' : 'expanded'; }
   catch (_) { return 'expanded'; }
 }
-// One button that says what it will do: "⤢ Expand" while the spec is compact,
-// "⤡ Compact" while it is expanded. Two pills, Compact and Expanded, read as a
+// One button that says what it will do: "Expand" while the spec is compact,
+// "Compact" while it is expanded, each with a drawn icon (the ⤡ ⤢ glyphs were
+// near-invisible at bar size; 2026-11-13). Two pills, Compact and Expanded, read as a
 // state to pick rather than an action on the text, and neither said that it
 // opens or closes the blocks. Requested 2026-11-12.
 function _mePsFmtBtnState(mode) {
   return mode === 'compact'
-    ? { label: '\u2922 Expand',  next: 'expanded', title: 'Expand the spec: one line per attribute. Comments and trailing commas are kept; \u21B6 undoes it.' }
-    : { label: '\u2921 Compact', next: 'compact',  title: 'Compact the spec: one line per block. Comments and trailing commas are kept; \u21B6 undoes it.' };
+    ? { label: 'Expand',  icon: 'expand',  next: 'expanded', title: 'Expand the spec: one line per attribute. Comments and trailing commas are kept; \u21B6 undoes it.' }
+    : { label: 'Compact', icon: 'compact', next: 'compact',  title: 'Compact the spec: one line per block. Comments and trailing commas are kept; \u21B6 undoes it.' };
 }
+// Both labels are in the button, laid over each other, and only the one that
+// applies is visible: the button is as wide as the wider label whichever is
+// showing, so pressing it does not move what sits beside it. Requested 2026-11-13.
 function _mePsFmtBtnHtml() {
-  const b = _mePsFmtBtnState(_mePsFmtMode());
-  return `<button class="btn" id="me-ps-fmt" style="margin-left:auto" onclick="_mePsToggleFmt()" title="${b.title}">${b.label}</button>`;
+  const mode = _mePsFmtMode(), b = _mePsFmtBtnState(mode);
+  const lbl = m => { const st = _mePsFmtBtnState(m);
+    return `<span data-fmt="${m}"${m === mode ? '' : ' class="me-ps-fmt-off"'}><i class="me-ps-ico me-ps-ico-${st.icon}" aria-hidden="true"></i>${st.label}</span>`; };
+  return `<button class="btn" id="me-ps-fmt" style="margin-left:auto" onclick="_mePsToggleFmt()" title="${b.title}">${lbl('expanded')}${lbl('compact')}</button>`;
 }
 function _mePsToggleFmt() { _mePsSetFmtMode(_mePsFmtBtnState(_mePsFmtMode()).next); }
 function _mePsSetFmtMode(mode) {
@@ -31660,7 +31678,10 @@ function _mePsSetFmtMode(mode) {
   // The button only — the Binary / Non-Binary pair next to it is left alone
   // (a broad selector once turned the active variant off; 2026-08-22).
   const btn = document.getElementById('me-ps-fmt');
-  if (btn) { const b = _mePsFmtBtnState(mode); btn.textContent = b.label; btn.title = b.title; }
+  if (btn) {
+    btn.title = _mePsFmtBtnState(mode).title;
+    btn.querySelectorAll('[data-fmt]').forEach(sp => sp.classList.toggle('me-ps-fmt-off', sp.dataset.fmt !== mode));
+  }
   _mePsFmt();     // the choice IS the action — re-format straight away
 }
 
@@ -45643,7 +45664,7 @@ function _meSave() {
               <li><strong>Identity</strong> — type code (up to 5 characters), label, volume and colour</li>
               <li><strong>Recognizers</strong> — the conditions that identify the class (see <em>Detection</em>)</li>
               <li><strong>DDL Bindings</strong> — the DDLs this class is parsed with; the first is the default</li>
-              <li><strong>Parse Spec</strong> — the steps that walk the bytes: fixed reads, bitmaps, tokens, TLV, segments, <code>when</code> conditions and more. <strong>⤡ Compact</strong> puts each block on one line and <strong>⤢ Expand</strong> gives each attribute its own; the button names what it will do, keeps comments, and ↶ undoes it</li>
+              <li><strong>Parse Spec</strong> — the steps that walk the bytes: fixed reads, bitmaps, tokens, TLV, segments, <code>when</code> conditions and more. <strong>Compact</strong> puts each block on one line and <strong>Expand</strong> gives each attribute its own; the button names what it will do, keeps comments, and ↶ undoes it</li>
               <li><strong>Business Rules</strong> — what the business requires of a message, such as <em>a network management message must carry DE-70</em>: <em>When</em> some conditions hold, others <em>Must hold</em>. Each parsed message gets a <em>rules</em> badge beside its type — green when every rule that applies passes, amber when some fail, red when all do; click it for what failed. A rule with a <em>Tag name</em> also shows that tag beside the type when it is met; one with only <em>When</em> and a tag just labels the messages it matches, such as <em>RECURRING</em> or <em>REVERSAL</em></li>
               <li><strong>Overrides</strong> — per field: <strong>TYPE</strong> (how the bytes are read), <strong>SHOW</strong> (display only), <strong>SIZE</strong>, <strong>DE</strong> (data-element number) and <strong>VLG</strong> (where a variable length comes from)</li>
               <li><strong>↶ Undo</strong> — removing overrides (one field's or many), a DDL binding, a recognizer or a business rule, clearing the DEs, and deleting a class each leave a notice with <strong>↶ Undo</strong> that puts it back as it was. Deleting a class still asks you to type DELETE first</li>

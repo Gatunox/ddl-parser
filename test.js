@@ -28661,11 +28661,14 @@ console.log('\nHelp — what 2026-11-12 added');
 console.log('\nParse Spec — one format toggle');
 {
   const run = c => vm.runInContext(c, sandbox);
-  test('[REGRESSION] the format button says what it will do, and flips each press', () => {
+  test('[REGRESSION] the format button says what it will do, flips each press, and keeps one width', () => {
     // Two pills, Compact and Expanded, read as a state and not as "expand / compact the script".
-    eq(run("_mePsFmtBtnState('compact').label"), '⤢ Expand', 'a compact spec does not offer to expand');
-    eq(run("_mePsFmtBtnState('expanded').label"), '⤡ Compact', 'an expanded spec does not offer to compact');
-    const btn = { textContent: '', title: '' };
+    eq(run("_mePsFmtBtnState('compact').label"), 'Expand', 'a compact spec does not offer to expand');
+    eq(run("_mePsFmtBtnState('expanded').label"), 'Compact', 'an expanded spec does not offer to compact');
+    const span = m => { const cl = new Set(); return { dataset: { fmt: m }, classList: { toggle: (c, on) => on ? cl.add(c) : cl.delete(c), has: c => cl.has(c) } }; };
+    const spans = [span('expanded'), span('compact')];
+    const btn = { title: '', querySelectorAll: () => spans };
+    const shown = () => spans.filter(sp => !sp.classList.has('me-ps-fmt-off')).map(sp => sp.dataset.fmt).join();
     elStubs['me-ps-fmt'] = btn;
     sandbox.__k = storage.getItem('up_me_ps_fmt');
     run('__opf = _mePsFmt; _mePsFmt = () => {}');
@@ -28673,12 +28676,22 @@ console.log('\nParse Spec — one format toggle');
       storage.setItem('up_me_ps_fmt', 'expanded');
       run('_mePsToggleFmt()');
       eq(storage.getItem('up_me_ps_fmt'), 'compact', 'Compact did not compact');
-      eq(btn.textContent, '⤢ Expand', 'the button still offers what was just done');
+      eq(shown(), 'compact', 'the button does not now offer to expand');
+      assert.ok(/^Expand the spec/.test(btn.title), 'the tooltip did not follow');
       run('_mePsToggleFmt()');
       eq(storage.getItem('up_me_ps_fmt'), 'expanded', 'the second press did not expand');
-      eq(btn.textContent, '⤡ Compact');
-      assert.ok(/id="me-ps-fmt"[^>]*onclick="_mePsToggleFmt\(\)"[^>]*title="Compact the spec/.test(run("(() => { localStorage.setItem('up_me_ps_fmt','expanded'); return _mePsFmtBtnHtml(); })()")),
-        'the bar does not draw the toggle');
+      eq(shown(), 'expanded');
+      // Both labels are always in the button, one hidden, so its width never changes.
+      const h = run("(() => { localStorage.setItem('up_me_ps_fmt','expanded'); return _mePsFmtBtnHtml(); })()");
+      assert.ok(/id="me-ps-fmt"[^>]*onclick="_mePsToggleFmt\(\)"/.test(h), 'the bar does not draw the toggle');
+      assert.ok(/<span data-fmt="expanded"><i class="me-ps-ico me-ps-ico-compact" aria-hidden="true"><\/i>Compact<\/span><span data-fmt="compact" class="me-ps-fmt-off"><i class="me-ps-ico me-ps-ico-expand" aria-hidden="true"><\/i>Expand<\/span>/.test(h),
+        'both labels are not in the button with their icons, the other one hidden');
+      // The icons are drawn (the ⤡ ⤢ glyphs were near-invisible), in the button's colour.
+      assert.ok(/\.me-ps-ico\{[^}]*background-color:currentColor;/.test(html), 'the icon does not take the button colour');
+      for (const k of ['compact', 'expand'])
+        assert.ok(new RegExp(`\\.me-ps-ico-${k}\\{-webkit-mask-image:url\\("data:image/svg\\+xml,`).test(html), `no ${k} icon`);
+      assert.ok(/#me-ps-fmt>span\{grid-area:1\/1;\}/.test(html) && /#me-ps-fmt>\.me-ps-fmt-off\{visibility:hidden;\}/.test(html),
+        'the labels do not share one cell, or the hidden one is removed from layout');
       assert.ok(/\$\{_mePsFmtBtnHtml\(\)\}/.test(psFnSource('_meHtmlParseSpec')), 'the Parse Spec bar has no format button');
     } finally {
       run('_mePsFmt = __opf'); delete elStubs['me-ps-fmt'];

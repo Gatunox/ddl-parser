@@ -28639,6 +28639,25 @@ console.log('\nClasses in the IndexedDB store, migrated silently');
     for (const k of KEYS) assert.ok(run(`_APP_KV_KEYS.includes(${JSON.stringify(k)})`), `${k} is not a key of the store`);
   });
 }
+console.log('\nHelp — what 2026-11-12 added');
+{
+  test('[REGRESSION] Help describes what was added on 2026-11-12', () => {
+    // Asked after the release: the new features had reached the app and not Help.
+    const HELP = html.slice(html.indexOf('<div class="settings-help">'), html.indexOf('<!-- ── FEEDBACK'));
+    const sec = t => { const i = HELP.indexOf(`toggleHelpSub(this)">${t} <span`); assert.ok(i >= 0, `no "${t}" section`);
+                       const j = HELP.indexOf('toggleHelpSub(this)', i + 30); return HELP.slice(i, j < 0 ? HELP.length : j); };
+    const pr = sec('Parse Results'), bl = sec('Baselines'), dd = sec('DDL Definition'), ce = sec('Class Editor');
+    assert.ok(/<strong>Σ Stats<\/strong>/.test(pr), 'Σ Stats is not in Parse Results');
+    assert.ok(/another message of the log/.test(pr) && /<em>With another message…<\/em>/.test(bl), 'Compare with another message is missing');
+    assert.ok(/<strong>preview<\/strong> of the first fields/.test(sec('Message &amp; File Detection · DDL Matching')), 'the picker preview is missing');
+    assert.ok(/click it to show it whole/.test(dd) && /move under <strong>⋯<\/strong>/.test(dd), 'the issue bar or the ⋯ menu is missing');
+    assert.ok(/<strong>↶ Undo<\/strong> — removing overrides/.test(ce) && /deleting a class/.test(ce), 'Undo is missing');
+    assert.ok(/give way so <strong>Value<\/strong> stays in view/.test(pr), 'the narrow-panel columns are missing');
+    for (const w of ['<strong>DDL Tree</strong> — click it or <kbd>Tab</kbd>', '<strong>Field Map</strong>', 'The <strong>separators</strong>', '<kbd>Esc</kbd> cancels a confirmation dialog'])
+      assert.ok(HELP.includes(w), `the keyboard list lacks: ${w}`);
+    assert.ok(!/There are no other shortcuts/.test(HELP), 'Help still says there are no other shortcuts');
+  });
+}
 // ── Summary ───────────────────────────────────────────────────────────────────
 console.log(`\n${'─'.repeat(50)}`);
 if (failed === 0) {

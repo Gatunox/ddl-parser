@@ -23676,7 +23676,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.69.0.0';
+const APP_VERSION  = '1.69.0.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -45515,8 +45515,12 @@ function _meSave() {
               <li><kbd>↑ ↓</kbd> move the selection up / down in Parse Results</li>
               <li>In the audit record view, the arrows step between records; in the DDL picker, <kbd>↑ ↓</kbd> move between candidates</li>
               <li>Hold <kbd>Shift</kbd> while clicking <strong>&lt; &gt;</strong> to move 10 at a time</li>
+              <li><strong>DDL Tree</strong> — click it or <kbd>Tab</kbd> to it, then <kbd>↑ ↓</kbd> move through the nodes, <kbd>→</kbd> opens one, <kbd>←</kbd> closes it, <kbd>↵</kbd> selects</li>
+              <li><strong>Class Editor</strong> class list, the <strong>Saved</strong> baselines list and the <strong>Field Map</strong> — <kbd>↑ ↓</kbd> move the selection once the list has focus</li>
+              <li>The <strong>separators</strong> between panels — <kbd>Tab</kbd> to one, then the arrows move it 16px a press</li>
+              <li><kbd>Esc</kbd> cancels a confirmation dialog</li>
             </ul>
-            <p style="margin:6px 0 0;color:var(--text-dim);font-size:10.5px">The arrows are ignored while you are typing in a field or editor. There are no other shortcuts — dialogs and menus close with their own ✕ or by clicking outside them.</p>
+            <p style="margin:6px 0 0;color:var(--text-dim);font-size:10.5px">Whatever has the keyboard is outlined. The arrows are ignored while you are typing in a field or editor, and a list or separator takes them only while it has focus; everywhere else they move through Parse Results.</p>
           </div></div>
 
           <!-- 2. DDL Definition -->
@@ -45541,7 +45545,8 @@ function _meSave() {
               <li><strong>Doc</strong> — the parsed layout of the definition: every field with its offset, size and type, with a filter, <em>Collapse All</em> and <em>Hide Redef</em></li>
               <li><strong>Clear</strong> — empties the editor</li>
               <li><strong>Drag &amp; drop</strong> — drop a DDL text file onto the editor to preview it, then click <strong>Save</strong> to store it in the tree</li>
-              <li><strong>Validation bar</strong> — under the editor; lists errors, warnings and unresolved TYPE references, with &lt; &gt; to step through them and a copy button</li>
+              <li><strong>Validation bar</strong> — under the editor; lists errors, warnings and unresolved TYPE references, with &lt; &gt; to step through them and a copy button. A long message is cut short: click it to show it whole, click again to fold it</li>
+              <li>On a narrow window, the buttons the bar has no room for (Clear, then Doc) move under <strong>⋯</strong></li>
               <li>Tree nodes show <strong>✖ / ⚠ badges</strong> for errors and warnings; a <em>Missing References</em> section appears automatically for unresolved TYPEs</li>
             </ul>
           </div></div>
@@ -45613,7 +45618,7 @@ function _meSave() {
                 <ul style="padding-left:14px;margin:4px 0 0;font-size:10.5px">
                   <li><strong>Zero</strong> → <em>"No matching DDL for this message"</em></li>
                   <li><strong>One</strong> → used automatically</li>
-                  <li><strong>Multiple</strong> → a picker lists each DDL and its score; you pick one for the session</li>
+                  <li><strong>Multiple</strong> → a picker lists each DDL and its score, with a <strong>preview</strong> of the first fields the one under the pointer (or keyboard) reads from the message; you pick one for the session</li>
                 </ul>
               </li>
             </ol>
@@ -45632,6 +45637,7 @@ function _meSave() {
               <li><strong>Parse Spec</strong> — the steps that walk the bytes: fixed reads, bitmaps, tokens, TLV, segments, <code>when</code> conditions and more</li>
               <li><strong>Business Rules</strong> — what the business requires of a message, such as <em>a network management message must carry DE-70</em>: <em>When</em> some conditions hold, others <em>Must hold</em>. Each parsed message gets a <em>rules</em> badge beside its type — green when every rule that applies passes, amber when some fail, red when all do; click it for what failed. A rule with a <em>Tag name</em> also shows that tag beside the type when it is met; one with only <em>When</em> and a tag just labels the messages it matches, such as <em>RECURRING</em> or <em>REVERSAL</em></li>
               <li><strong>Overrides</strong> — per field: <strong>TYPE</strong> (how the bytes are read), <strong>SHOW</strong> (display only), <strong>SIZE</strong>, <strong>DE</strong> (data-element number) and <strong>VLG</strong> (where a variable length comes from)</li>
+              <li><strong>↶ Undo</strong> — removing overrides (one field's or many), a DDL binding, a recognizer or a business rule, clearing the DEs, and deleting a class each leave a notice with <strong>↶ Undo</strong> that puts it back as it was. Deleting a class still asks you to type DELETE first</li>
               <li><strong>Test</strong> — paste a message under the list and press <strong>▶ Run</strong>: every class is marked as winner, shadowed, rejected or never reached, a failing recognizer says which condition failed, and the winner's fields are shown as the app would parse them</li>
               <li><strong>Generate</strong> — beside ▶ Run: builds a message from the selected class, its parse spec run in reverse. It shows the class and the DDL it is bound to, and a row per field with a value you can edit: the fields outside the bitmap are always there, and a DE is added from the finder by number or name (✕ leaves it out). Each row shows the field's type and says where its value comes from: <strong>Fixed</strong> (default: zeros for digits, X for text, at the full width), <strong>Random num</strong>, <strong>Random alpha</strong>, <strong>Random hex</strong>, <strong>Blanks</strong> (spaces at the full width; each field offers only what its type can hold), <strong>Increment</strong> (the last generation plus one — the app keeps the count, so values are not repeated, and wraps to 0 past what the field holds), <strong>Date / time</strong> in a format you pick, or <strong>PAN</strong> of the length you set (Luhn-valid). Lengths are computed, never rows. HEX, ASCII or NETADRD, in the class's encoding. The message is parsed back with the class and the dialog says whether it came back as written and which class detects it; then, only when it comes back clean, the Test is cleared and it lands in the Test input, ready for ▶ Run — it is not parsed there for you. If it comes back clean and detected as the class, the window closes and a flash says so; otherwise what went wrong is shown at the top of the window — which recognizer turns it away, which field came back different. <strong>Token buffer</strong> — a section below the rows for an STM / PSTM or ISO / Base24 class: pick a token by id or DDL name from the token maps, value its fields like any row, then <strong>Add</strong> puts it in the buffer with those values fixed (Cancel drops it); the buffer shows each token as its id, name, length and value — the value can be edited there, and what is typed is the token. STM / PSTM carry the buffer after the last field; on an ISO class set DE 63 or 126 to <strong>Token buffer</strong>. The buffer is kept per class. Not yet generated, and named when met: <code>read-tlv</code>, <code>map</code>, <code>de</code> entries, <code>repeat</code>.</li>
             </ul>
@@ -45683,7 +45689,9 @@ function _meSave() {
               <li>Drag a <strong>column header edge</strong> to resize it; click a header to highlight the column</li>
               <li><strong>SEG-MAP</strong> — for segmented files, type a segment map (hex or bits) and press ▶ Parse to read only those segments</li>
               <li><strong>Trk</strong> checkbox — mark fields to compare across messages in <strong>⊞ Track Mode</strong></li>
-              <li><strong>★ Save</strong> / <strong>⇆ Compare</strong> — keep this parse as a baseline, or compare it with one (see <em>Baselines</em>); <strong>Export</strong> — save parsed messages to a file</li>
+              <li><strong>★ Save</strong> / <strong>⇆ Compare</strong> — keep this parse as a baseline, or compare it with a saved baseline or with another message of the log (see <em>Baselines</em>); <strong>Export</strong> — save parsed messages to a file</li>
+              <li><strong>Σ Stats</strong> — with more than one message: how many by class, by MTI (where the class has an <code>mti</code> recognizer) and by response code (DE 39), which need a look (no DDL, a field error), and requests paired with their responses by MTI and STAN (DE 11), with the times between them for NETADRD logs. Click a row and its messages are listed beside it; click one to open it</li>
+              <li>On a narrow panel the Description column, then Field, give way so <strong>Value</strong> stays in view; a shortened description ends in … and shows whole on hover</li>
               <li><strong>Issue bar</strong> — above the table when the message has problems: counts its errors (✖) and warnings (⚠), errors first; <strong>&lt; &gt;</strong> or a click on the text brings each row on screen and selects it, opening a collapsed group if needed; ✕ hides it for this message</li>
               <li><strong>rules ok/n</strong> badge — after the type code, when the class has business rules that apply to the message: green when all pass, amber when some fail, red when all do. Click it for the rules that failed, why each applied and what failed. A met rule with a tag shows that tag beside it</li>
               <li>An amber bar says when the message changed after it was parsed — press ▶ Parse to refresh</li>
@@ -45727,7 +45735,7 @@ function _meSave() {
             <p style="margin:0 0 6px">A baseline is a parse you keep, to compare later parses against.</p>
             <ul style="padding-left:16px;margin:0">
               <li><strong>★ Save</strong> in Parse Results — give it a name and optional tags (comma separated)</li>
-              <li><strong>⇆ Compare</strong> — appears when a baseline of the same class, DDL and parse spec exists; opens the two side by side, fields lined up by name, with differing values marked</li>
+              <li><strong>⇆ Compare</strong> — appears with a parsed message: <em>With a saved baseline</em> when one of the same class, DDL and parse spec exists, and <em>With another message…</em> when the log has more than one (it asks which, and both must have been parsed the same way). Either opens the two side by side, fields lined up by name, with differing values marked</li>
               <li><strong>★ Baseline Editor</strong> in the top bar — the saved list: view, compare, delete. Baselines that cannot be compared with the current parse are dimmed</li>
             </ul>
           </div></div>

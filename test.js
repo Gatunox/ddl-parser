@@ -28507,10 +28507,45 @@ console.log('\nLog statistics');
   test('[REGRESSION] Stats is offered with more than one message, and every row opens its messages', () => {
     assert.ok(/sb\.style\.display = on && S\.messages\.length > 1 \? 'inline-flex' : 'none';/.test(psFnSource('syncBlSaveBtn')), 'the button does not follow the parse');
     assert.ok(/<tr data-g="\$\{g\(idxs\)\}" onclick="statsShow\(this\)"/.test(psFnSource('openStats')), 'a row does not open its messages');
-    assert.ok(/onclick="statsGo\(\$\{i\}\)"/.test(psFnSource('statsShow')), 'a message in the list does not open');
+    assert.ok(/onclick="statsGo\(\$\{i\}\)"/.test(psFnSource('_statsRender')), 'a message in the list does not open');
     assert.ok(/closeStats\(\); jumpTo\(i\);/.test(psFnSource('statsGo')), 'opening a message does not go to it');
     // MTI is never guessed from a field name, as in Follow.
     assert.ok(/const mti = _followMti\(msg\);/.test(psFnSource('_logStats')), 'the MTI is read some other way than Follow reads it');
+  });
+}
+console.log('\nLog statistics — layout and a long list');
+{
+  const run = c => vm.runInContext(c, sandbox);
+  test('[REGRESSION] the statistics list a thousand messages by drawing only the rows in view', () => {
+    // The list sat squeezed under the counts and stopped at 300.
+    const st = run('S'), was = { m: st.messages };
+    const sc = { scrollTop: 0, clientHeight: 220 }, sp = { innerHTML: '', style: {} }, hdr = { textContent: '' };
+    Object.assign(elStubs, { statsVScroll: sc, statsVSpacer: sp, statsListHdr: hdr });
+    sandbox.__fm = () => '0200';
+    run('__ofm = _followMti; _followMti = __fm');
+    try {
+      st.messages = Array.from({ length: 1000 }, (_, i) => ({ isNetard: true, recNo: 5000 + i, time: 't' + i, msgType: { label: 'STM' },
+                                                             fields: [{ id: 'RC', deNum: 39, value: '00' }] }));
+      run('_statsGroups = [Array.from({ length: 1000 }, (_, i) => i)]');
+      run('statsShow')({ dataset: { g: '0' }, classList: { add() {} }, querySelector: () => ({ firstChild: { textContent: 'Every message' } }) });
+      eq(sp.style.height, (1000 * 22) + 'px', 'the scrollbar does not stand for all of them');
+      assert.ok(/Every message — 1000 messages/.test(hdr.textContent), 'the list does not say what it lists: ' + hdr.textContent);
+      const drawn = () => (sp.innerHTML.match(/class="st-vrow"/g) || []).length;
+      assert.ok(drawn() > 5 && drawn() <= 30, `${drawn()} rows drawn for a view of 10`);
+      assert.ok(/data-i="0"[^>]*>.*Rec 5000.*t0.*STM.*0200.*00/.test(sp.innerHTML), 'a row does not carry its facts');
+      sc.scrollTop = 990 * 22;
+      run('_statsRender()');
+      assert.ok(/data-i="999"/.test(sp.innerHTML) && !/data-i="0"/.test(sp.innerHTML), 'scrolling does not move the drawn rows');
+      assert.ok(drawn() <= 30, 'scrolling drew more than the view');
+    } finally {
+      run('_followMti = __ofm'); st.messages = was.m;
+      for (const k of ['statsVScroll', 'statsVSpacer', 'statsListHdr']) delete elStubs[k];
+    }
+    // Two columns, and no third one standing empty.
+    const open = psFnSource('openStats');
+    assert.ok(/<div class="st-wrap"><div class="st-left">/.test(open) && /<div class="st-right">/.test(open), 'not two columns');
+    assert.ok(!/class="st-x"/.test(open), 'the empty third column is back');
+    assert.ok(/if \(first\) statsShow\(first\);/.test(open), 'the list starts empty');
   });
 }
 // ── Summary ───────────────────────────────────────────────────────────────────

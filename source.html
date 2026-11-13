@@ -1305,18 +1305,28 @@ input.tree-search:focus, #treeSearch:focus { border-color: var(--accent); }
           font-size: calc(var(--sz-mono) + 1px); user-select: none; color: var(--text); }
 .cp-ico:hover { opacity: 1; }
 .cp-ico.cp-empty { display: none !important; }
-/* Log statistics */
-#statsBody h4 { margin: 12px 0 4px; font-family: var(--mono); font-size: var(--sz-mono); color: var(--text-dim); }
+/* Log statistics: the counts on the left, the picked row's messages on the
+   right, each scrolling on its own. */
+#statsBody { overflow: hidden; display: flex; }
+.st-wrap { display: grid; grid-template-columns: minmax(240px, 340px) minmax(0, 1fr); flex: 1; min-height: 0; }
+.st-left { overflow: auto; padding: 0 10px 10px; border-right: var(--bw) solid var(--border); }
+.st-left h4 { margin: 12px 0 4px; font-family: var(--mono); font-size: var(--sz-mono); color: var(--text-dim); }
 .st-tbl { width: 100%; table-layout: fixed; }
-.exp-tbl.st-tbl td, .exp-tbl.st-tbl td:first-child { text-align: left; max-width: none; }
-.st-tbl td:first-child { width: 45%; }
 .st-tbl tr { cursor: pointer; }
-.st-tbl tr.st-on td { background: rgba(var(--accent-rgb), 0.12); }
-.exp-tbl.st-tbl td.st-n { text-align: right; width: 70px; font-weight: 700; }
-.st-tbl td.st-x { color: var(--text-dim); }
-.st-list { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 4px; }
-.st-list-hdr { flex-basis: 100%; color: var(--text-dim); font-family: var(--mono); font-size: calc(var(--sz-mono) - 1px); }
-.st-more { color: var(--text-very-dim); font-family: var(--mono); font-size: calc(var(--sz-mono) - 1px); }
+.st-tbl tr.st-on td { background: rgba(var(--accent-rgb), 0.14); }
+.exp-tbl.st-tbl td, .exp-tbl.st-tbl td:first-child { text-align: left; max-width: none; white-space: normal; }
+.exp-tbl.st-tbl td.st-n { text-align: right; width: 64px; font-weight: 700; }
+.st-sub { color: var(--text-dim); font-size: calc(var(--sz-mono) - 1px); }
+.st-right { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.st-list-hdr { padding: 6px 10px; color: var(--text-dim); font-family: var(--mono); font-size: calc(var(--sz-mono) - 1px); }
+.st-vscroll { flex: 1; min-height: 0; overflow: auto; }
+.st-vspacer { position: relative; }
+.st-vrow { display: grid; grid-template-columns: 110px 170px minmax(80px, 1fr) 56px 56px; gap: 8px; align-items: center;
+           height: 22px; padding: 0 10px; font-family: var(--mono); font-size: var(--sz-mono); white-space: nowrap; }
+.st-vrow > span { overflow: hidden; text-overflow: ellipsis; }
+.st-vspacer .st-vrow { position: absolute; left: 0; right: 0; cursor: pointer; }
+.st-vspacer .st-vrow:hover { background: rgba(var(--accent-rgb), 0.10); }
+.st-vhead { color: var(--text-dim); border-bottom: var(--bw) solid var(--border); flex-shrink: 0; }
 /* The DDL picker's preview: what the candidate under the pointer reads. */
 .pp-preview { margin: 2px 4px 0 2px; padding: 4px 8px; border: var(--bw) solid var(--border); border-radius: var(--r-sm);
               font-family: var(--mono); font-size: calc(var(--sz-mono) - 1px); max-height: 170px; overflow: auto; }
@@ -15581,7 +15591,7 @@ const _CP = {
   raw:        { has: () => _rawDumpLines().length > 0, copy: () => copyRawToClipboard() },
   spec:       { has: () => !!_cpById('specBody')?.firstElementChild, copy: () => _cpWrite(_cpElText(_cpById('specBody')), 'Specification') },
   follow:     { has: () => !!_cpById('followBody')?.querySelector('tr[data-i]'), copy: () => _cpWrite(_cpElText(_cpById('followBody'), 'tr'), 'Results') },
-  stats:      { has: () => !!_cpById('statsBody')?.querySelector('tr'), copy: () => _cpWrite(_cpElText(_cpById('statsBody'), 'h4, tr'), 'Statistics') },
+  stats:      { has: () => !!_cpById('statsBody')?.querySelector('tr'), copy: () => _cpWrite(_cpElText(_cpById('statsBody'), '.st-left h4, .st-left tr'), 'Statistics') },
   journal:    { has: () => _journalLines.length > 0, copy: () => journalCopy() },
   ddlDoc:     { has: () => !!_cpById('ddlDocBody')?.querySelector('tr'), copy: () => copyDDLDoc() },
   meClasses:  { has: () => !!document.querySelector('#me-ent-list .me-item-name'), copy: () => _cpWrite(_cpNames('#me-ent-list .me-item-name'), 'Class names') },
@@ -15611,6 +15621,7 @@ const _CP_ROWS = [
   ['#rawDisplay .dump-row', el => _cpWrite(_rawDumpLines()[+el.dataset.row / 16] || '', 'Line')],
   ['#followBody tr[data-i]', el => _cpWrite(_cpRowText(el), 'Row')],
   ['#statsBody tr[data-g]', el => _cpWrite(_cpRowText(el), 'Row')],
+  ['#statsVSpacer .st-vrow', el => _cpWrite(_statsRowCells(+el.dataset.i).join('\t'), 'Row')],
   ['#journalBody .jl, #whyPop .jl', el => _cpWrite(_cpRowText(el), 'Line')],
   ['#ddlDocBody tr', el => _cpWrite(_cpRowText(el), 'Row')],
   ['.me-item-list .me-item', el => _cpWrite(el.querySelector('.me-item-name')?.textContent.trim() || '', 'Name')],
@@ -17684,51 +17695,82 @@ function _logStats(messages) {
 }
 let _statsGroups = [];   // index → the message indexes a row counts
 function _statsMs(v) { return v == null ? '' : v < 1000 ? v + ' ms' : (v / 1000).toFixed(v < 10000 ? 2 : 1) + ' s'; }
+// Two columns: the counts on the left, and on the right the messages of the
+// row picked, at full height. The list draws only the rows in view, so a log
+// of a thousand records — or a hundred thousand — opens as fast as one of
+// five. Reported 2026-11-12: one wide table with an empty column, and the list
+// squeezed under it and cut at 300.
+const _ST_ROW_H = 22;
+let _statsList = [];
 function openStats() {
   if (!S.isParsed || !S.messages.length) return;
   const st = _logStats(S.messages);
   _statsGroups = [];
   const g = idxs => { _statsGroups.push(idxs); return _statsGroups.length - 1; };
-  const row = (label, idxs, extra = '') =>
-    `<tr data-g="${g(idxs)}" onclick="statsShow(this)" title="Show these messages"><td>${esc(label)}</td><td class="st-n">${idxs.length}</td><td class="st-x">${extra}</td></tr>`;
-  const table = (title, map, label = k => k) => map.size
-    ? `<h4>${esc(title)}</h4><table class="exp-tbl st-tbl"><tbody>`
-      + [...map.entries()].sort((a, b) => b[1].length - a[1].length || String(a[0]).localeCompare(String(b[0])))
-          .map(([k, v]) => row(label(k), v)).join('') + `</tbody></table>`
-    : '';
+  const row = (label, idxs, sub = '') =>
+    `<tr data-g="${g(idxs)}" onclick="statsShow(this)" title="List these messages"><td>${esc(label)}${sub ? `<div class="st-sub">${sub}</div>` : ''}</td><td class="st-n">${idxs.length}</td></tr>`;
+  const table = (title, rows) => rows.length ? `<h4>${esc(title)}</h4><table class="exp-tbl st-tbl"><tbody>${rows.join('')}</tbody></table>` : '';
+  const sorted = map => [...map.entries()].sort((a, b) => b[1].length - a[1].length || String(a[0]).localeCompare(String(b[0])));
   const lazy = typeof _lazyDeferreds !== 'undefined' && _lazyDeferreds ? _lazyDeferreds.length - _lazyDeferredIdx : 0;
-  let html = `<div class="fw-note">${st.total} message${st.total !== 1 ? 's' : ''}`
+  let left = `<div class="fw-note">${st.total} message${st.total !== 1 ? 's' : ''}`
     + (lazy > 0 ? ` parsed so far — ${lazy} more not parsed yet are not counted` : '') + '.</div>';
-  const over = [];
-  if (st.noDdl.length)   over.push(row('No DDL — not parsed', st.noDdl));
-  if (st.withErr.length) over.push(row('With a field error', st.withErr));
-  if (over.length) html += `<h4>Needs a look</h4><table class="exp-tbl st-tbl"><tbody>${over.join('')}</tbody></table>`;
-  html += table('By class', st.byClass);
-  html += table('By MTI', st.byMti, k => { const l = _followStep(k).label; return l ? `${k} — ${l}` : k; });
-  html += table('By response code (DE 39)', st.byResp);
-  if (st.pairs.length || st.unanswered.length) {
-    html += `<h4>Request → response (paired by MTI and STAN)</h4><table class="exp-tbl st-tbl"><tbody>`;
-    if (st.pairs.length) html += row('Answered', st.pairs.map(p => p.req),
-      st.timing ? `min ${_statsMs(st.timing.min)} · avg ${_statsMs(st.timing.avg)} · max ${_statsMs(st.timing.max)}` : 'no record times');
-    if (st.unanswered.length) html += row('No response in the log', st.unanswered);
-    for (const p of st.slowest) html += row(`Slowest: message ${p.req + 1} → ${p.resp + 1}`, [p.req, p.resp], _statsMs(p.ms));
-    html += `</tbody></table>`;
-  }
-  if (!st.byMti.size) html += `<div class="fw-note">No MTI counts: no class here declares an <code>mti</code> recognizer.</div>`;
-  html += `<div id="statsList" class="st-list"></div>`;
-  document.getElementById('statsBody').innerHTML = html;
+  left += table('All', [row('Every message', S.messages.map((_, i) => i))]);
+  left += table('Needs a look', [st.noDdl.length ? row('No DDL — not parsed', st.noDdl) : '',
+                                 st.withErr.length ? row('With a field error', st.withErr) : ''].filter(Boolean));
+  left += table('By class', sorted(st.byClass).map(([k, v]) => row(k, v)));
+  left += table('By MTI', sorted(st.byMti).map(([k, v]) => { const l = _followStep(k).label; return row(l ? `${k} — ${l}` : k, v); }));
+  left += table('By response code (DE 39)', sorted(st.byResp).map(([k, v]) => row(k, v)));
+  const pr = [];
+  if (st.pairs.length) pr.push(row('Answered', st.pairs.map(p => p.req),
+    st.timing ? `min ${_statsMs(st.timing.min)} · avg ${_statsMs(st.timing.avg)} · max ${_statsMs(st.timing.max)}` : 'no record times'));
+  if (st.unanswered.length) pr.push(row('No response in the log', st.unanswered));
+  for (const p of st.slowest) pr.push(row(`Slowest: ${p.req + 1} → ${p.resp + 1}`, [p.req, p.resp], _statsMs(p.ms)));
+  left += table('Request → response (MTI + STAN)', pr);
+  if (!st.byMti.size) left += `<div class="fw-note">No MTI counts: no class here declares an <code>mti</code> recognizer.</div>`;
+  const cols = ['#', 'Time', 'Class', 'MTI', 'DE 39'].map(h => `<span>${h}</span>`).join('');
+  document.getElementById('statsBody').innerHTML =
+    `<div class="st-wrap"><div class="st-left">${left}</div>`
+    + `<div class="st-right"><div class="st-list-hdr" id="statsListHdr"></div>`
+    + `<div class="st-vrow st-vhead">${cols}</div>`
+    + `<div class="st-vscroll" id="statsVScroll" onscroll="_statsRender()"><div class="st-vspacer" id="statsVSpacer"></div></div></div></div>`;
   document.getElementById('statsOverlay').classList.remove('hidden');
+  // Every message to begin with, so the right side is never an empty box.
+  const first = document.querySelector('#statsBody tr[data-g]');
+  if (first) statsShow(first);
 }
 function statsShow(tr) {
-  const idxs = _statsGroups[+tr.dataset.g] || [];
+  _statsList = _statsGroups[+tr.dataset.g] || [];
   document.querySelectorAll('#statsBody tr.st-on').forEach(r => r.classList.remove('st-on'));
   tr.classList.add('st-on');
-  const MAX = 300;
-  const list = document.getElementById('statsList');
-  if (!list) return;
-  list.innerHTML = `<div class="st-list-hdr">${idxs.length} message${idxs.length !== 1 ? 's' : ''} — click one to open it</div>`
-    + idxs.slice(0, MAX).map(i => `<span class="fw-chip" onclick="statsGo(${i})">${S.messages[i]?.isNetard ? 'Rec ' + esc(String(S.messages[i].recNo)) : 'Msg ' + (i + 1)}</span>`).join('')
-    + (idxs.length > MAX ? `<span class="st-more">+${idxs.length - MAX} more</span>` : '');
+  const label = tr.querySelector('td')?.firstChild?.textContent || '';
+  const hdr = document.getElementById('statsListHdr');
+  if (hdr) hdr.textContent = `${label} — ${_statsList.length} message${_statsList.length !== 1 ? 's' : ''}, click one to open it`;
+  const sp = document.getElementById('statsVSpacer');
+  if (sp) sp.style.height = (_statsList.length * _ST_ROW_H) + 'px';
+  const sc = document.getElementById('statsVScroll');
+  if (sc) sc.scrollTop = 0;
+  _statsRender();
+}
+// One line of the list: the facts the counts are made of.
+function _statsRowCells(i) {
+  const m = S.messages[i];
+  if (!m) return ['', '', '', '', ''];
+  return [m.isNetard ? 'Rec ' + m.recNo : 'Msg ' + (i + 1), m.time || m.timestamp || '',
+          m.msgType?.label || m.msgType?.type || '', _followMti(m), _statsDe(m, 39)];
+}
+// The rows in view, and a few either side; the spacer keeps the scrollbar honest.
+function _statsRender() {
+  const sc = document.getElementById('statsVScroll'), sp = document.getElementById('statsVSpacer');
+  if (!sc || !sp) return;
+  const first = Math.max(0, Math.floor(sc.scrollTop / _ST_ROW_H) - 10);
+  const last  = Math.min(_statsList.length, Math.ceil((sc.scrollTop + sc.clientHeight) / _ST_ROW_H) + 10);
+  let html = '';
+  for (let k = first; k < last; k++) {
+    const i = _statsList[k];
+    html += `<div class="st-vrow" style="top:${k * _ST_ROW_H}px" data-i="${i}" onclick="statsGo(${i})" title="Open this message">`
+      + _statsRowCells(i).map(c => `<span>${esc(String(c))}</span>`).join('') + `</div>`;
+  }
+  sp.innerHTML = html;
 }
 function statsGo(i) { closeStats(); jumpTo(i); }
 function closeStats() { document.getElementById('statsOverlay')?.classList.add('hidden'); }
@@ -23582,7 +23624,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.68.0.0';
+const APP_VERSION  = '1.68.0.1';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -45147,7 +45189,7 @@ function _meSave() {
   </div>
 </div>
 <div class="modal-overlay hidden" id="statsOverlay" onmousedown="if(event.target===this)closeStats()">
-  <div class="ddl-doc-modal" style="width:min(900px,96vw)">
+  <div class="ddl-doc-modal" style="width:min(1000px,96vw);height:min(80vh,760px)">
     <div class="ddl-doc-hdr">
       <span class="ddl-doc-title">Log statistics</span>
       <span class="cp-ico cp-empty" data-cp="stats" onclick="event.stopPropagation();_cpCopy('stats', this)" ondblclick="event.stopPropagation()" onmouseenter="_tipShow(this,'Copy to clipboard')" onmouseleave="_tipHide()">⧉</span>

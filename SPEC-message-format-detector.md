@@ -2492,7 +2492,7 @@ class: its parse spec run in reverse, each block writing what it would read.
 
 ## 13. Storage
 
-- Message and file specs are stored in `localStorage` as JSON.
+- Message and file specs are stored as JSON in the app's IndexedDB key-value store (`ddl-parser-kv`), with the DDL tree and the baselines — not in `localStorage`, whose ~5 MB per site a set of classes with long parse specs could reach. `up_format_specs`, `up_format_default_seen` and `up_format_sync_ver` are keys in that store; where IndexedDB cannot be opened they fall back to `localStorage`. Classes saved by an earlier version in `localStorage` are copied into the store once, silently, at startup; the `localStorage` copy is removed only after the write completes.
 - YAML is a documentation format only — the internal representation is always JSON.
 
 | Key | Holds |

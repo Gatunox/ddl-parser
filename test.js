@@ -28567,6 +28567,78 @@ console.log('\nParse Results — the > hint');
     assert.ok(/document\.addEventListener\('click', _navHintDone, true\);/.test(APP_SRC), 'nothing listens for the click');
   });
 }
+console.log('\nClasses in the IndexedDB store, migrated silently');
+{
+  const run = c => vm.runInContext(c, sandbox);
+  const fakeDb = () => {
+    const db = { puts: [], txs: [] };
+    db.transaction = () => {
+      const tx = { store: { put: r => db.puts.push(r), delete() {} } };
+      tx.objectStore = () => tx.store;
+      db.txs.push(tx);
+      return tx;
+    };
+    return db;
+  };
+  const KEYS = ['up_format_specs', 'up_format_default_seen', 'up_format_sync_ver'];
+  const keep = () => ({ db: run('_appKVDB'), kv: Object.fromEntries(KEYS.map(k => [k, run(`_appKV[${JSON.stringify(k)}]`)])),
+                        ls: Object.fromEntries(KEYS.map(k => [k, storage.getItem(k)])) });
+  const restore = k => {
+    sandbox.__db = k.db; run('_appKVDB = __db');
+    for (const key of KEYS) {
+      if (k.kv[key] === undefined) run(`delete _appKV[${JSON.stringify(key)}]`); else { sandbox.__v = k.kv[key]; run(`_appKV[${JSON.stringify(key)}] = __v`); }
+      if (k.ls[key] === null) storage.removeItem(key); else storage.setItem(key, k.ls[key]);
+    }
+  };
+
+  test('[REGRESSION] classes saved in localStorage are copied into IndexedDB once, and removed only after the write completes', () => {
+    const was = keep();
+    try {
+      const db = fakeDb();
+      sandbox.__db = db; run('_appKVDB = __db');
+      for (const key of KEYS) run(`delete _appKV[${JSON.stringify(key)}]`);
+      storage.setItem('up_format_specs', '{"specs":[{"name":"MINE"}]}');
+      storage.setItem('up_format_sync_ver', '3');
+      storage.removeItem('up_format_default_seen');
+      eq(run('_fmtMigrateToKV()'), 2, 'not every saved key was moved');
+      eq(JSON.stringify(db.puts.map(p => p.key).sort()), '["up_format_specs","up_format_sync_ver"]', 'not written to IndexedDB');
+      eq(run("_appKV['up_format_specs']"), '{"specs":[{"name":"MINE"}]}', 'not readable this session');
+      assert.ok(storage.getItem('up_format_specs') !== null, 'localStorage was emptied before the write completed');
+      db.txs[0].oncomplete();
+      eq(storage.getItem('up_format_specs'), null, 'the localStorage copy outlived the completed write');
+      eq(storage.getItem('up_format_sync_ver'), null, 'the sync marker was left behind');
+      // The app now reads the classes from the store.
+      eq(run('window._fmtGetSaved().specs[0].name'), 'MINE', 'classes are not read from IndexedDB');
+      // A second start moves nothing.
+      eq(run('_fmtMigrateToKV()'), 0, 'the migration ran again');
+    } finally { restore(was); }
+  });
+
+  test('[REGRESSION] the store already holding classes wins; saving writes to the store, not localStorage', () => {
+    const was = keep();
+    try {
+      const db = fakeDb();
+      sandbox.__db = db; run('_appKVDB = __db');
+      run(`_appKV['up_format_specs'] = '{"specs":[{"name":"NEWER"}]}'`);
+      storage.setItem('up_format_specs', '{"specs":[{"name":"OLDER"}]}');
+      eq(run('_fmtMigrateToKV()'), 0, 'an older localStorage copy was moved over the store');
+      eq(run('window._fmtGetSaved().specs[0].name'), 'NEWER', 'the store did not win');
+      eq(storage.getItem('up_format_specs'), '{"specs":[{"name":"OLDER"}]}', 'the leftover was touched');
+      storage.removeItem('up_format_specs');
+      eq(run("window._fmtSave([{ name: 'SAVED', label: 'SAVED' }])"), true, 'save failed');
+      assert.ok(db.puts.some(p => p.key === 'up_format_specs' && /SAVED/.test(p.value)), 'the save did not reach IndexedDB');
+      eq(storage.getItem('up_format_specs'), null, 'the save went to localStorage');
+      // Without IndexedDB, localStorage is the store, as before.
+      run('_appKVDB = null');
+      storage.setItem('up_format_specs', '{"specs":[{"name":"LOCAL"}]}');
+      eq(run('window._fmtGetSaved().specs[0].name'), 'LOCAL', 'the fallback does not read localStorage');
+      eq(run('_fmtMigrateToKV()'), 0, 'migrated with no store to migrate into');
+    } finally { restore(was); run('window._fmtLoad && window._fmtLoad()'); }
+    assert.ok(/_appKVLoaded = true;\s*\n\s*_fmtMigrateToKV\(\);[^\n]*\n\s*_fmtSyncDefaults\(\);/.test(APP_SRC),
+      'the migration does not run at startup, before the classes are read');
+    for (const k of KEYS) assert.ok(run(`_APP_KV_KEYS.includes(${JSON.stringify(k)})`), `${k} is not a key of the store`);
+  });
+}
 // ── Summary ───────────────────────────────────────────────────────────────────
 console.log(`\n${'─'.repeat(50)}`);
 if (failed === 0) {

@@ -17710,8 +17710,8 @@ test('the Format control expands before it decides, and the button is gone', () 
   // The pill applies the format, so a separate Format button is a second way to
   // do the same thing.
   assert.ok(!/aria-label="Format"/.test(html), 'the redundant Format button is gone');
-  assert.ok(/_mePsSetFmtMode\('compact'\)/.test(html) && /_mePsSetFmtMode\('expanded'\)/.test(html),
-    'both pill options are present');
+  // One button since 2026-11-12, naming what it will do next.
+  assert.ok(/onclick="_mePsToggleFmt\(\)"/.test(html), 'the format toggle is missing');
 });
 
 test('expand and compact are inverses, and neither changes the data', () => {
@@ -24711,10 +24711,10 @@ test('[REGRESSION] changing the format mode does not clear the active spec varia
   // off. The spec then looked like it had no variant selected until the next
   // re-render put it back. Reported 2026-08-22 — it predates the bar work.
   const fn = psFnSource('_mePsSetFmtMode');
-  assert.ok(/querySelectorAll\('#me-ps-fmt /.test(fn),
-    `the format toggle reaches outside its own group: ${fn}`);
-  assert.ok(!/\.me-ps-variants \.me-ps-variant-tgl/.test(fn),
-    'the broad selector is back — it matches the variant toggles too');
+  assert.ok(/document\.getElementById\('me-ps-fmt'\)/.test(fn),
+    `the format toggle reaches outside its own button: ${fn}`);
+  assert.ok(!/me-ps-variant-tgl/.test(fn),
+    'the format toggle touches the variant toggles');
   // And the group it scopes to is the one the markup builds.
   const src = fs.readFileSync('./source.html', 'utf8');
   assert.ok(/id="me-ps-fmt"/.test(src), 'the format group has no id to scope to');
@@ -28656,6 +28656,34 @@ console.log('\nHelp — what 2026-11-12 added');
     for (const w of ['<strong>DDL Tree</strong> — click it or <kbd>Tab</kbd>', '<strong>Field Map</strong>', 'The <strong>separators</strong>', '<kbd>Esc</kbd> cancels a confirmation dialog'])
       assert.ok(HELP.includes(w), `the keyboard list lacks: ${w}`);
     assert.ok(!/There are no other shortcuts/.test(HELP), 'Help still says there are no other shortcuts');
+  });
+}
+console.log('\nParse Spec — one format toggle');
+{
+  const run = c => vm.runInContext(c, sandbox);
+  test('[REGRESSION] the format button says what it will do, and flips each press', () => {
+    // Two pills, Compact and Expanded, read as a state and not as "expand / compact the script".
+    eq(run("_mePsFmtBtnState('compact').label"), '⤢ Expand', 'a compact spec does not offer to expand');
+    eq(run("_mePsFmtBtnState('expanded').label"), '⤡ Compact', 'an expanded spec does not offer to compact');
+    const btn = { textContent: '', title: '' };
+    elStubs['me-ps-fmt'] = btn;
+    sandbox.__k = storage.getItem('up_me_ps_fmt');
+    run('__opf = _mePsFmt; _mePsFmt = () => {}');
+    try {
+      storage.setItem('up_me_ps_fmt', 'expanded');
+      run('_mePsToggleFmt()');
+      eq(storage.getItem('up_me_ps_fmt'), 'compact', 'Compact did not compact');
+      eq(btn.textContent, '⤢ Expand', 'the button still offers what was just done');
+      run('_mePsToggleFmt()');
+      eq(storage.getItem('up_me_ps_fmt'), 'expanded', 'the second press did not expand');
+      eq(btn.textContent, '⤡ Compact');
+      assert.ok(/id="me-ps-fmt"[^>]*onclick="_mePsToggleFmt\(\)"[^>]*title="Compact the spec/.test(run("(() => { localStorage.setItem('up_me_ps_fmt','expanded'); return _mePsFmtBtnHtml(); })()")),
+        'the bar does not draw the toggle');
+      assert.ok(/\$\{_mePsFmtBtnHtml\(\)\}/.test(psFnSource('_meHtmlParseSpec')), 'the Parse Spec bar has no format button');
+    } finally {
+      run('_mePsFmt = __opf'); delete elStubs['me-ps-fmt'];
+      if (sandbox.__k === null) storage.removeItem('up_me_ps_fmt'); else storage.setItem('up_me_ps_fmt', sandbox.__k);
+    }
   });
 }
 // ── Summary ───────────────────────────────────────────────────────────────────

@@ -23676,7 +23676,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.69.0.1';
+const APP_VERSION  = '1.69.0.2';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -27386,10 +27386,7 @@ function _meHtmlParseSpec(item) {
       <button class="me-ps-variant-tgl ${ascCls}" data-variant="ascii" onclick="_mePsSwitchVariant('ascii')" title="Non-Binary Input — used when the bytes came from CHARACTERS and any non-printable byte was already lost: ascii, netard-ascii, netard, fup-ascii, and EBCDIC when you pick it by hand. When empty it falls back to the Binary spec.">Non-Binary <span class="me-ps-vtgl-n">(${ascCount})</span></button>
     </div>
     <div id="me-spec-warns" class="me-warn-inline" style="margin-left:12px">${_meSpecWarnsHtml(item)}</div>
-    <div class="me-ps-variants" id="me-ps-fmt" style="margin-left:auto" title="Re-format the spec: one line per block, or one line per attribute. Comments and trailing commas are preserved.">
-      <button class="me-ps-variant-tgl${_mePsFmtMode() === 'compact' ? ' on' : ''}" onclick="_mePsSetFmtMode('compact')">Compact</button>
-      <button class="me-ps-variant-tgl${_mePsFmtMode() === 'compact' ? '' : ' on'}" onclick="_mePsSetFmtMode('expanded')">Expanded</button>
-    </div>
+    ${_mePsFmtBtnHtml()}
     <span class="me-ps-undo-pair">
       <button class="btn btn-ico" id="me-ps-undo" onclick="_mePsUndo()"
         title="Undo the last edit to this spec (\u2318Z)" disabled>\u21B6</button>
@@ -31643,15 +31640,27 @@ function _mePsFmtMode() {
   try { return localStorage.getItem(_ME_PS_FMT_KEY) === 'compact' ? 'compact' : 'expanded'; }
   catch (_) { return 'expanded'; }
 }
+// One button that says what it will do: "⤢ Expand" while the spec is compact,
+// "⤡ Compact" while it is expanded. Two pills, Compact and Expanded, read as a
+// state to pick rather than an action on the text, and neither said that it
+// opens or closes the blocks. Requested 2026-11-12.
+function _mePsFmtBtnState(mode) {
+  return mode === 'compact'
+    ? { label: '\u2922 Expand',  next: 'expanded', title: 'Expand the spec: one line per attribute. Comments and trailing commas are kept; \u21B6 undoes it.' }
+    : { label: '\u2921 Compact', next: 'compact',  title: 'Compact the spec: one line per block. Comments and trailing commas are kept; \u21B6 undoes it.' };
+}
+function _mePsFmtBtnHtml() {
+  const b = _mePsFmtBtnState(_mePsFmtMode());
+  return `<button class="btn" id="me-ps-fmt" style="margin-left:auto" onclick="_mePsToggleFmt()" title="${b.title}">${b.label}</button>`;
+}
+function _mePsToggleFmt() { _mePsSetFmtMode(_mePsFmtBtnState(_mePsFmtMode()).next); }
 function _mePsSetFmtMode(mode) {
-  try { localStorage.setItem(_ME_PS_FMT_KEY, mode === 'compact' ? 'compact' : 'expanded'); } catch (_) {}
-  // #me-ps-fmt, not every .me-ps-variants in the bar: the Binary / ASCII group
-  // carries the same class, so the broad selector marked the format mode ON and
-  // in the same pass turned the ACTIVE VARIANT off. It looked like the spec had
-  // no variant selected until the next re-render put it back. Predates the bar
-  // work — found while checking it. Reported 2026-08-22.
-  document.querySelectorAll('#me-ps-fmt .me-ps-variant-tgl').forEach(b =>
-    b.classList.toggle('on', b.textContent.trim().toLowerCase() === mode));
+  mode = mode === 'compact' ? 'compact' : 'expanded';
+  try { localStorage.setItem(_ME_PS_FMT_KEY, mode); } catch (_) {}
+  // The button only — the Binary / Non-Binary pair next to it is left alone
+  // (a broad selector once turned the active variant off; 2026-08-22).
+  const btn = document.getElementById('me-ps-fmt');
+  if (btn) { const b = _mePsFmtBtnState(mode); btn.textContent = b.label; btn.title = b.title; }
   _mePsFmt();     // the choice IS the action — re-format straight away
 }
 
@@ -45634,7 +45643,7 @@ function _meSave() {
               <li><strong>Identity</strong> — type code (up to 5 characters), label, volume and colour</li>
               <li><strong>Recognizers</strong> — the conditions that identify the class (see <em>Detection</em>)</li>
               <li><strong>DDL Bindings</strong> — the DDLs this class is parsed with; the first is the default</li>
-              <li><strong>Parse Spec</strong> — the steps that walk the bytes: fixed reads, bitmaps, tokens, TLV, segments, <code>when</code> conditions and more</li>
+              <li><strong>Parse Spec</strong> — the steps that walk the bytes: fixed reads, bitmaps, tokens, TLV, segments, <code>when</code> conditions and more. <strong>⤡ Compact</strong> puts each block on one line and <strong>⤢ Expand</strong> gives each attribute its own; the button names what it will do, keeps comments, and ↶ undoes it</li>
               <li><strong>Business Rules</strong> — what the business requires of a message, such as <em>a network management message must carry DE-70</em>: <em>When</em> some conditions hold, others <em>Must hold</em>. Each parsed message gets a <em>rules</em> badge beside its type — green when every rule that applies passes, amber when some fail, red when all do; click it for what failed. A rule with a <em>Tag name</em> also shows that tag beside the type when it is met; one with only <em>When</em> and a tag just labels the messages it matches, such as <em>RECURRING</em> or <em>REVERSAL</em></li>
               <li><strong>Overrides</strong> — per field: <strong>TYPE</strong> (how the bytes are read), <strong>SHOW</strong> (display only), <strong>SIZE</strong>, <strong>DE</strong> (data-element number) and <strong>VLG</strong> (where a variable length comes from)</li>
               <li><strong>↶ Undo</strong> — removing overrides (one field's or many), a DDL binding, a recognizer or a business rule, clearing the DEs, and deleting a class each leave a notice with <strong>↶ Undo</strong> that puts it back as it was. Deleting a class still asks you to type DELETE first</li>

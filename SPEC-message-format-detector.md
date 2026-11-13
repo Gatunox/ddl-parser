@@ -2510,6 +2510,7 @@ class: its parse spec run in reverse, each block writing what it would read.
 | `up_trk_col_w` | Field Tracking column widths. Keyed by column: `num` and `ts` by name, each value column by its **field id** (`f:<ID>`) — so a column that leaves the tracking and comes back returns the width it had |
 | `up_me_fm_colvis` | Field Map column visibility — which columns the ⚙ chooser is showing |
 | `up_msg_export_cols` | Export Messages column selection — which of Field / Description / Value / Raw Hex the text file carries |
+| `up_msg_export_fmt` | Export Messages file format — `txt` (the readable layout, shaped by the column selection), `csv` (one row per message, one column per field) or `json` (every field with all it carries). A preference about the output, so it persists |
 | `up_me_ps_fmt` | Parse-spec **Format** shape — `compact` (one line per block) or `expanded` (one line per attribute). A reading preference, so it persists. |
 | `up_me_sidebar_w` | Class Editor Entities column width |
 | `up_bl_colvis` | Baselines table hidden columns. One entry per column PAIR — a column is the same column on both sides, so hiding it hides both halves and the mirrored layouts stay symmetric |

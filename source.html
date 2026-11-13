@@ -1305,6 +1305,26 @@ input.tree-search:focus, #treeSearch:focus { border-color: var(--accent); }
           font-size: calc(var(--sz-mono) + 1px); user-select: none; color: var(--text); }
 .cp-ico:hover { opacity: 1; }
 .cp-ico.cp-empty { display: none !important; }
+/* Log statistics */
+#statsBody h4 { margin: 12px 0 4px; font-family: var(--mono); font-size: var(--sz-mono); color: var(--text-dim); }
+.st-tbl { width: 100%; table-layout: fixed; }
+.exp-tbl.st-tbl td, .exp-tbl.st-tbl td:first-child { text-align: left; max-width: none; }
+.st-tbl td:first-child { width: 45%; }
+.st-tbl tr { cursor: pointer; }
+.st-tbl tr.st-on td { background: rgba(var(--accent-rgb), 0.12); }
+.exp-tbl.st-tbl td.st-n { text-align: right; width: 70px; font-weight: 700; }
+.st-tbl td.st-x { color: var(--text-dim); }
+.st-list { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 4px; }
+.st-list-hdr { flex-basis: 100%; color: var(--text-dim); font-family: var(--mono); font-size: calc(var(--sz-mono) - 1px); }
+.st-more { color: var(--text-very-dim); font-family: var(--mono); font-size: calc(var(--sz-mono) - 1px); }
+/* The DDL picker's preview: what the candidate under the pointer reads. */
+.pp-preview { margin: 2px 4px 0 2px; padding: 4px 8px; border: var(--bw) solid var(--border); border-radius: var(--r-sm);
+              font-family: var(--mono); font-size: calc(var(--sz-mono) - 1px); max-height: 170px; overflow: auto; }
+.pp-pv-hdr  { color: var(--text-dim); margin-bottom: 3px; }
+.pp-pv-row  { display: flex; gap: 10px; white-space: nowrap; }
+.pp-pv-id   { flex: 0 0 34%; overflow: hidden; text-overflow: ellipsis; color: var(--text); font-weight: 700; }
+.pp-pv-val  { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--success); white-space: pre; }
+.pp-pv-more, .pp-pv-empty { color: var(--text-very-dim); margin-top: 2px; }
 /* Where the keyboard is: one ring for everything that takes focus and has no
    focus style of its own (buttons and fields keep theirs). Requested 2026-11-12. */
 :focus-visible { outline: var(--bw-ctl) solid var(--accent); outline-offset: -2px; }
@@ -4895,8 +4915,10 @@ th.me-fm-colhi{color:var(--accent);}
           <div style="position:relative;display:inline-flex">
             <button class="btn" id="blSaveBtn" onclick="toggleBlSaveDialog()" style="display:none;flex-shrink:0"
                     title="Keep this parse as a baseline to compare later ones against">&#9733; Save</button>
-            <button class="btn" id="blCmpBtn" onclick="blCompareCurrent()" style="display:none;flex-shrink:0"
+            <button class="btn" id="blCmpBtn" onclick="event.stopPropagation();blCompareMenu(event)" style="display:none;flex-shrink:0"
                     title="Compare this parse with a saved baseline">&#8646; Compare</button>
+            <button class="btn" id="statsBtn" onclick="openStats()" style="display:none;flex-shrink:0"
+                    title="Statistics of the log: messages by class, MTI and response code, and request → response times">&Sigma; Stats</button>
             <div id="blSaveDialog" class="audit-cfg-dialog bl-save-dlg">
               <div class="audit-cfg-hdr"><span>Save as baseline</span>
                 <button class="btn" onclick="toggleBlSaveDialog(false)" style="padding:1px 7px;font-size:13px">&#10005;</button></div>
@@ -8293,6 +8315,15 @@ function _msgPan(msg, masked) {
 
 function openMsgExportModal() {
   if (!S.isParsed || !S.messages.length) return;
+  // The format chosen last time.
+  const _fmtSel = document.getElementById('expFmt');
+  if (_fmtSel && 'value' in _fmtSel) {
+    let v = 'txt';
+    try { v = localStorage.getItem(_EXP_FMT_KEY) || 'txt'; } catch (_) {}
+    _fmtSel.value = ['txt', 'csv', 'json'].includes(v) ? v : 'txt';
+    const b = document.getElementById('exp-cols-btn');
+    if (b) b.disabled = _fmtSel.value !== 'txt';
+  }
 
   const rows = S.messages.map((msg, idx) => {
     const mti     = _msgMti(msg);
@@ -8486,6 +8517,68 @@ function _expWrapCell(text, w) {
 // Whether the export being written masks sensitive fields: the dialog's
 // checkbox, which starts from Settings → Mask sensitive fields → Export.
 let _expMaskOn = true;
+
+// ── CSV and JSON ────────────────────────────────────────────────────────────
+// The text export is for reading; these are for other programs. Remembered,
+// like the columns, because it is a preference about the output.
+// Requested 2026-11-12.
+const _EXP_FMT_KEY = 'up_msg_export_fmt';
+function _expFmt() {
+  const v = document.getElementById('expFmt')?.value;
+  return v === 'csv' || v === 'json' ? v : 'txt';
+}
+function _expFmtChange(v) {
+  try { localStorage.setItem(_EXP_FMT_KEY, v); } catch (_) {}
+  // The column chooser shapes the text layout only.
+  const b = document.getElementById('exp-cols-btn');
+  if (b) b.disabled = v !== 'txt';
+}
+// What a message is, before its fields: the same facts the text header carries.
+function _expMsgHead(msg, idx) {
+  return {
+    message: msg.isNetard ? msg.recNo : idx + 1,
+    type:    msg.msgType?.type || '',
+    mti:     _msgMti(msg),
+    time:    msg.time || msg.timestamp || '',
+    source:  msg.isNetard ? (msg.source || '') : (msg.ddlPath || ''),
+    dest:    msg.isNetard ? (msg.dest || '') : '',
+    bytes:   msg.isNetard ? msg.recLength : (msg.bytes?.length || 0),
+  };
+}
+const _expValue = f => String((f.displayValue != null ? f.displayValue : f.value) ?? '');
+// One row per message, one column per field — every field any picked message
+// has, in the order first met — so a spreadsheet can sort and filter on a DE.
+// A field a message lacks is an empty cell. A UTF-8 BOM, so Excel reads accents.
+function _expCsv(picked) {
+  const q = v => { const t = String(v ?? ''); return /[",\r\n]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t; };
+  const ids = [], seen = new Set();
+  const rows = picked.map(({ msg, idx }) => {
+    const vals = new Map();
+    for (const f0 of msg.fields || []) {
+      const f = _expMaskOn ? _maskField(msg, f0) : f0;
+      if (!seen.has(f.id)) { seen.add(f.id); ids.push(f.id); }
+      // The same id twice in one message (a repeated block) keeps both values.
+      vals.set(f.id, vals.has(f.id) ? vals.get(f.id) + ' | ' + _expValue(f) : _expValue(f));
+    }
+    return { head: _expMsgHead(msg, idx), vals };
+  });
+  const headKeys = ['message', 'type', 'mti', 'time', 'source', 'dest', 'bytes'];
+  const out = [[...headKeys.map(k => k.toUpperCase()), ...ids].map(q).join(',')];
+  for (const r of rows) out.push([...headKeys.map(k => r.head[k]), ...ids.map(id => r.vals.get(id) ?? '')].map(q).join(','));
+  return '\ufeff' + out.join('\r\n') + '\r\n';
+}
+// Everything, as data: each message's facts and every field with all it has.
+function _expJson(picked) {
+  return JSON.stringify(picked.map(({ msg, idx }) => ({
+    ..._expMsgHead(msg, idx),
+    fields: (msg.fields || []).map(f0 => {
+      const f = _expMaskOn ? _maskField(msg, f0) : f0;
+      const bytes = f.valueLength === undefined ? null
+        : f.valueLength + ((f.lenPrefix && !f.lenPrefixOwnRow) ? f.lenPrefix.length : 0);
+      return { id: f.id, description: f.description || '', bytes, value: _expValue(f), rawHex: f.rawHex || '' };
+    }),
+  })), null, 2);
+}
 function _expMsgLines(msg, idx) {
   const lines = [];
   const type   = msg.msgType?.type || '';
@@ -8554,14 +8647,22 @@ function doMsgExport() {
   if (!selected.length) { flash('Select at least one message to export', 'warn'); return; }
 
   _expMaskOn = document.getElementById('expMaskChk')?.checked ?? _maskExportOn();
-  const lines = [];
-  for (const idx of selected) lines.push(..._expMsgLines(S.messages[idx], idx));
+  const fmt = _expFmt();
+  const picked = selected.map(idx => ({ msg: S.messages[idx], idx }));
+  let body, type;
+  if (fmt === 'csv')       { body = _expCsv(picked);  type = 'text/csv'; }
+  else if (fmt === 'json') { body = _expJson(picked); type = 'application/json'; }
+  else {
+    const lines = [];
+    for (const { msg, idx } of picked) lines.push(..._expMsgLines(msg, idx));
+    body = lines.join('\n'); type = 'text/plain';
+  }
 
-  const blob = new Blob([lines.join('\n')], { type: 'text/plain' });
+  const blob = new Blob([body], { type });
   const url  = URL.createObjectURL(blob);
   const a    = document.createElement('a');
   a.href     = url;
-  a.download = `messages-export-${new Date().toISOString().slice(0,10)}.txt`;
+  a.download = `messages-export-${new Date().toISOString().slice(0,10)}.${fmt}`;
   a.click();
   URL.revokeObjectURL(url);
   closeMsgExportModal();
@@ -12788,7 +12889,7 @@ function _compileDDLTreeThen(useCache, reg, secReg, done) {
 function _drainTypePickers(queue, sessionMappings, done) {
   (function next(idx) {
     if (idx >= queue.length) { done(); return; }
-    const { msgType, allMatches } = queue[idx];
+    const { msgType, allMatches, sample } = queue[idx];
     if (sessionMappings[msgType.type]) { next(idx + 1); return; }
     const pickerMatches = allMatches.map(m => ({ ...m, path: m.ddlPath }));
     _showProgressPicker(`Awaiting DDL selection \u2014 ${msgType.label || msgType.type}`, pickerMatches,
@@ -12802,7 +12903,7 @@ function _drainTypePickers(queue, sessionMappings, done) {
         }
         sessionMappings[msgType.type] = { ddlPath: match.ddlPath, defName: match.defName };
         next(idx + 1);
-      }, msgType, _meSpecNeedsBinding(msgType));
+      }, msgType, _meSpecNeedsBinding(msgType), sample);
   })(0);
 }
 
@@ -13224,7 +13325,28 @@ function _parseProgressHide() {
 // label   — step label shown as a new progress step
 // matches — array of { path, defName } candidates (max 15 shown)
 // cb      — called with the chosen match object, or null if cancelled
-function _showProgressPicker(label, matches, cb, msgType = null, force = false) {
+// What a candidate makes of the message: its first fields, read with that DDL —
+// so the choice is made on what it produces, not on a score alone. Built on
+// demand and kept per candidate; screen masking applies as in Parse Results.
+// Requested 2026-11-12.
+const _PP_PREVIEW_N = 8;
+function _ppPreviewHtml(msgType, m, sample) {
+  let out;
+  try { out = _fieldsForChosen(msgType, m, sample.parseBytes, sample.rawBytes); } catch (e) { out = null; }
+  const all = (out && out.fields) || [];
+  const shown = all.filter(f => !f.isGroup && f.value != null).slice(0, _PP_PREVIEW_N);
+  if (!shown.length) return `<div class="pp-pv-empty">This definition reads no fields from the message.</div>`;
+  const msg = { msgType, fields: all };
+  const rows = shown.map(f0 => {
+    const f = _maskScreenOn() ? _maskField(msg, f0) : f0;
+    const v = String((f.displayValue != null ? f.displayValue : f.value) ?? '');
+    return `<div class="pp-pv-row"><span class="pp-pv-id">${esc(f.id)}</span><span class="pp-pv-val">${esc(v)}</span></div>`;
+  }).join('');
+  const more = all.length > shown.length ? `<div class="pp-pv-more">${all.length} fields in all</div>` : '';
+  return rows + more;
+}
+
+function _showProgressPicker(label, matches, cb, msgType = null, force = false, sample = null) {
   _parseProgressStep(label);
   if (matches.length === 0) {
     // Nothing to pick — treat as cancelled so caller can continue
@@ -13257,7 +13379,24 @@ function _showProgressPicker(label, matches, cb, msgType = null, force = false) 
     shown.map((m, i) =>
       `<button class="btn" data-ppi="${i}" style="text-align:left;font-family:var(--mono);font-size:var(--sz-mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(m.path)}">${esc(m.defName)} <span style="color:var(--text-dim);font-size:0.9em">${esc(m.path)}</span> <span style="color:var(--warning);font-size:0.9em">${m.score != null ? Math.round(m.score * 100) + '%' : ''}</span></button>`
     ).join('') +
-    `</div>`;
+    `</div>` +
+    (sample && msgType ? `<div class="pp-preview" id="ppPreview"></div>` : '');
+  // The preview follows the candidate under the pointer or the keyboard.
+  const pv = pp.querySelector('#ppPreview');
+  const pvCache = new Map();
+  const preview = i => {
+    if (!pv || !shown[i]) return;
+    if (!pvCache.has(i)) pvCache.set(i, _ppPreviewHtml(msgType, shown[i], sample));
+    pv.innerHTML = `<div class="pp-pv-hdr">Preview \u2014 ${esc(shown[i].defName || shown[i].path)}</div>` + pvCache.get(i);
+  };
+  if (pv) {
+    pp.querySelectorAll('button[data-ppi]').forEach(btn => {
+      const i = parseInt(btn.dataset.ppi, 10);
+      btn.addEventListener('mouseenter', () => preview(i));
+      btn.addEventListener('focus', () => preview(i));
+    });
+    preview(0);
+  }
   pp.querySelector('.pp-skip-btn')?.addEventListener('click', () => {
     pp.innerHTML = ''; pp.classList.add('hidden');
     _ppPickerCb = null;
@@ -13684,7 +13823,8 @@ function doParseNetardLog(text, opts = {}) {
                     } });
                   if (!_typeSeen.has(msgType.type)) {
                     _typeSeen.add(msgType.type);
-                    typePickerQueue.push({ msgType, allMatches });
+                    // The first record of the type is what the picker previews.
+                    typePickerQueue.push({ msgType, allMatches, sample: { parseBytes, rawBytes: bytes } });
                   }
                 }
                 return;
@@ -14473,7 +14613,8 @@ function doParseMessages() {
                   } });
                 if (!_typeSeen.has(msgType.type)) {
                   _typeSeen.add(msgType.type);
-                  typePickerQueue.push({ msgType, allMatches });
+                  // The first record of the type is what the picker previews.
+                  typePickerQueue.push({ msgType, allMatches, sample: { parseBytes, rawBytes: bytes } });
                 }
               }
               continue;
@@ -15440,6 +15581,7 @@ const _CP = {
   raw:        { has: () => _rawDumpLines().length > 0, copy: () => copyRawToClipboard() },
   spec:       { has: () => !!_cpById('specBody')?.firstElementChild, copy: () => _cpWrite(_cpElText(_cpById('specBody')), 'Specification') },
   follow:     { has: () => !!_cpById('followBody')?.querySelector('tr[data-i]'), copy: () => _cpWrite(_cpElText(_cpById('followBody'), 'tr'), 'Results') },
+  stats:      { has: () => !!_cpById('statsBody')?.querySelector('tr'), copy: () => _cpWrite(_cpElText(_cpById('statsBody'), 'h4, tr'), 'Statistics') },
   journal:    { has: () => _journalLines.length > 0, copy: () => journalCopy() },
   ddlDoc:     { has: () => !!_cpById('ddlDocBody')?.querySelector('tr'), copy: () => copyDDLDoc() },
   meClasses:  { has: () => !!document.querySelector('#me-ent-list .me-item-name'), copy: () => _cpWrite(_cpNames('#me-ent-list .me-item-name'), 'Class names') },
@@ -15468,6 +15610,7 @@ const _CP_ROWS = [
   ['#resContainer tr[data-fid]', el => copyFieldToClipboard(el.dataset.fid)],
   ['#rawDisplay .dump-row', el => _cpWrite(_rawDumpLines()[+el.dataset.row / 16] || '', 'Line')],
   ['#followBody tr[data-i]', el => _cpWrite(_cpRowText(el), 'Row')],
+  ['#statsBody tr[data-g]', el => _cpWrite(_cpRowText(el), 'Row')],
   ['#journalBody .jl, #whyPop .jl', el => _cpWrite(_cpRowText(el), 'Line')],
   ['#ddlDocBody tr', el => _cpWrite(_cpRowText(el), 'Row')],
   ['.me-item-list .me-item', el => _cpWrite(el.querySelector('.me-item-name')?.textContent.trim() || '', 'Name')],
@@ -17491,6 +17634,107 @@ function followGo(i, j) {
   jumpTo(S.messages.indexOf(h.msg));
 }
 function closeFollow() { _followRun++; document.getElementById('followOverlay')?.classList.add('hidden'); }
+
+// ── Statistics of a log ─────────────────────────────────────────────────────
+// What a log holds at a glance: messages by class, by MTI and by response code,
+// and how long responses took. Every number opens the messages it counts.
+// Read the way Follow reads (TODO 30): the MTI only where the class declares an
+// `mti` recognizer, the response code and STAN only from fields the parse placed
+// as DE 39 and DE 11 — never guessed from a field name. Times are the NETADRD
+// record times. Over the messages parsed so far. Requested 2026-11-12.
+function _statsDe(msg, n) {
+  const f = (msg.fields || []).find(x => x.deNum === n && !x.error && x.value != null);
+  return f ? String(f.value).trim() : '';
+}
+function _logStats(messages) {
+  const add = (m, k, i) => { if (!m.has(k)) m.set(k, []); m.get(k).push(i); };
+  const byClass = new Map(), byMti = new Map(), byResp = new Map();
+  const noDdl = [], withErr = [];
+  const netard = _followKind(messages) === 'netard';
+  const open = new Map();          // pairOf|STAN → [request index, ...]
+  const pairs = [];                // { req, resp, ms }
+  const steps = messages.map((msg, i) => {
+    if (!msg) return null;
+    add(byClass, msg.msgType?.label || msg.msgType?.type || '(not recognised)', i);
+    if (msg.noMatchDDL || !(msg.fields || []).length) noDdl.push(i);
+    if ((msg.fields || []).some(f => f.error)) withErr.push(i);
+    const mti = _followMti(msg);
+    if (mti) add(byMti, mti, i);
+    const rc = _statsDe(msg, 39);
+    if (rc) add(byResp, rc, i);
+    return { mti, step: _followStep(mti), stan: _statsDe(msg, 11), ms: netard ? _followMs(msg.time) : null };
+  });
+  // A response answers the earliest open request it pairs with: the MTI one
+  // step on, the same STAN.
+  steps.forEach((s, i) => {
+    if (!s || !s.mti || !s.stan) return;
+    if (s.step.pairOf) { add(open, s.step.pairOf + '|' + s.stan, i); return; }
+    const q = open.get(s.mti + '|' + s.stan);
+    if (!q || !q.length) return;
+    const r = q.shift();
+    const a = steps[r].ms, b = s.ms;
+    pairs.push({ req: r, resp: i, ms: a != null && b != null && b >= a ? b - a : null });
+  });
+  const unanswered = [...open.values()].flat().sort((a, b) => a - b);
+  const timed = pairs.filter(p => p.ms != null).map(p => p.ms);
+  const timing = timed.length ? { n: timed.length, min: Math.min(...timed), max: Math.max(...timed),
+                                  avg: Math.round(timed.reduce((a, b) => a + b, 0) / timed.length) } : null;
+  const slowest = pairs.filter(p => p.ms != null).sort((a, b) => b.ms - a.ms).slice(0, 5);
+  return { total: messages.length, byClass, byMti, byResp, noDdl, withErr, pairs, unanswered, timing, slowest, netard };
+}
+let _statsGroups = [];   // index → the message indexes a row counts
+function _statsMs(v) { return v == null ? '' : v < 1000 ? v + ' ms' : (v / 1000).toFixed(v < 10000 ? 2 : 1) + ' s'; }
+function openStats() {
+  if (!S.isParsed || !S.messages.length) return;
+  const st = _logStats(S.messages);
+  _statsGroups = [];
+  const g = idxs => { _statsGroups.push(idxs); return _statsGroups.length - 1; };
+  const row = (label, idxs, extra = '') =>
+    `<tr data-g="${g(idxs)}" onclick="statsShow(this)" title="Show these messages"><td>${esc(label)}</td><td class="st-n">${idxs.length}</td><td class="st-x">${extra}</td></tr>`;
+  const table = (title, map, label = k => k) => map.size
+    ? `<h4>${esc(title)}</h4><table class="exp-tbl st-tbl"><tbody>`
+      + [...map.entries()].sort((a, b) => b[1].length - a[1].length || String(a[0]).localeCompare(String(b[0])))
+          .map(([k, v]) => row(label(k), v)).join('') + `</tbody></table>`
+    : '';
+  const lazy = typeof _lazyDeferreds !== 'undefined' && _lazyDeferreds ? _lazyDeferreds.length - _lazyDeferredIdx : 0;
+  let html = `<div class="fw-note">${st.total} message${st.total !== 1 ? 's' : ''}`
+    + (lazy > 0 ? ` parsed so far — ${lazy} more not parsed yet are not counted` : '') + '.</div>';
+  const over = [];
+  if (st.noDdl.length)   over.push(row('No DDL — not parsed', st.noDdl));
+  if (st.withErr.length) over.push(row('With a field error', st.withErr));
+  if (over.length) html += `<h4>Needs a look</h4><table class="exp-tbl st-tbl"><tbody>${over.join('')}</tbody></table>`;
+  html += table('By class', st.byClass);
+  html += table('By MTI', st.byMti, k => { const l = _followStep(k).label; return l ? `${k} — ${l}` : k; });
+  html += table('By response code (DE 39)', st.byResp);
+  if (st.pairs.length || st.unanswered.length) {
+    html += `<h4>Request → response (paired by MTI and STAN)</h4><table class="exp-tbl st-tbl"><tbody>`;
+    if (st.pairs.length) html += row('Answered', st.pairs.map(p => p.req),
+      st.timing ? `min ${_statsMs(st.timing.min)} · avg ${_statsMs(st.timing.avg)} · max ${_statsMs(st.timing.max)}` : 'no record times');
+    if (st.unanswered.length) html += row('No response in the log', st.unanswered);
+    for (const p of st.slowest) html += row(`Slowest: message ${p.req + 1} → ${p.resp + 1}`, [p.req, p.resp], _statsMs(p.ms));
+    html += `</tbody></table>`;
+  }
+  if (!st.byMti.size) html += `<div class="fw-note">No MTI counts: no class here declares an <code>mti</code> recognizer.</div>`;
+  html += `<div id="statsList" class="st-list"></div>`;
+  document.getElementById('statsBody').innerHTML = html;
+  document.getElementById('statsOverlay').classList.remove('hidden');
+}
+function statsShow(tr) {
+  const idxs = _statsGroups[+tr.dataset.g] || [];
+  document.querySelectorAll('#statsBody tr.st-on').forEach(r => r.classList.remove('st-on'));
+  tr.classList.add('st-on');
+  const MAX = 300;
+  const list = document.getElementById('statsList');
+  if (!list) return;
+  list.innerHTML = `<div class="st-list-hdr">${idxs.length} message${idxs.length !== 1 ? 's' : ''} — click one to open it</div>`
+    + idxs.slice(0, MAX).map(i => `<span class="fw-chip" onclick="statsGo(${i})">${S.messages[i]?.isNetard ? 'Rec ' + esc(String(S.messages[i].recNo)) : 'Msg ' + (i + 1)}</span>`).join('')
+    + (idxs.length > MAX ? `<span class="st-more">+${idxs.length - MAX} more</span>` : '');
+}
+function statsGo(i) { closeStats(); jumpTo(i); }
+function closeStats() { document.getElementById('statsOverlay')?.classList.add('hidden'); }
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && !document.getElementById('statsOverlay')?.classList.contains('hidden')) closeStats();
+});
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape' && !document.getElementById('followOverlay')?.classList.contains('hidden')) closeFollow();
 });
@@ -23338,7 +23582,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.67.0.0';
+const APP_VERSION  = '1.68.0.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -25570,10 +25814,52 @@ function blCompareCurrent() {
   const msg = S.messages[S.curIdx];
   const hits = _blMatchesFor(msg);
   if (!hits.length) { flash('No baseline saved yet for this type code, DDL and parse spec.', 'warn'); return; }
+  _blMsgCmp = null;
   _blCmpKey = _blMatchKey(msg);
   _blSel = hits[0].id;
   _blMode = 'compare';
   openBaselines({ keepSelection: true });
+}
+
+// ── Two messages of the same log, side by side ─────────────────────────────
+// The baseline comparison, with another message of the log on the left in place
+// of a saved baseline — nothing is saved to compare two parses that are already
+// on screen. Same rule as a baseline: the two have to share the type code, DDL
+// definition and parse spec, or lining their fields up would be a coincidence.
+// Requested 2026-11-12.
+let _blMsgCmp = null;   // { idx } — the message on the left, while comparing two messages
+function blCompareMenu(ev) {
+  const msg = S.messages[S.curIdx];
+  const nBl = _blMatchesFor(msg).length;
+  const items = [];
+  if (nBl) items.push({ label: `With a saved baseline (${nBl})`, fn: blCompareCurrent });
+  if (S.messages.length > 1) items.push({ label: 'With another message\u2026', fn: blCompareMsgPrompt });
+  if (items.length === 1) { items[0].fn(); return; }
+  if (!items.length) return;
+  const r = (ev.currentTarget || ev.target).getBoundingClientRect();
+  showCtxMenu(r.left, r.bottom + 2, items);
+}
+function blCompareMsgPrompt() {
+  const n = S.messages.length, cur = S.curIdx;
+  showPrompt(`Compare message ${cur + 1} with message number (1\u2013${n}):`, String(cur > 0 ? cur : cur + 2), v => {
+    const k = parseInt(String(v || '').trim(), 10);
+    if (!(k >= 1 && k <= n)) { if (v != null && String(v).trim()) flash(`There is no message ${String(v).trim()} — pick 1 to ${n}`, 'warn'); return; }
+    blCompareMsg(k - 1);
+  });
+}
+function blCompareMsg(idx) {
+  const cur = S.messages[S.curIdx], other = S.messages[idx];
+  if (!cur || !other) return false;
+  if (idx === S.curIdx) { flash('That is the message on screen — pick another one', 'warn'); return false; }
+  if (_blMatchKey(other) !== _blMatchKey(cur)) {
+    flash(`Messages ${idx + 1} and ${S.curIdx + 1} were not parsed as the same type, DDL definition and parse spec — their fields would not line up`, 'warn');
+    return false;
+  }
+  _blMsgCmp = { idx };
+  _blCmpKey = _blMatchKey(cur);
+  _blMode = 'compare';
+  openBaselines({ keepSelection: true });
+  return true;
 }
 
 function blSaveKey(ev) {
@@ -25591,13 +25877,16 @@ function syncBlSaveBtn() {
   // baseline of the same type code, DDL definition and parse spec. With none,
   // saving is the only thing this parse can do, and offering a button that
   // cannot act is worse than not offering it.
+  const sb = document.getElementById('statsBtn');
+  if (sb && sb.style) sb.style.display = on && S.messages.length > 1 ? 'inline-flex' : 'none';
   const c = document.getElementById('blCmpBtn');
   if (!c) return;
   const n = on ? _blMatchesFor(S.messages[S.curIdx]).length : 0;
+  const others = on && S.messages.length > 1;
   c.style.display = on ? 'inline-flex' : 'none';
-  c.disabled = !n;
-  c.title = n
-    ? `Compare with ${n === 1 ? 'the saved baseline' : 'one of ' + n + ' saved baselines'} for this message`
+  c.disabled = !n && !others;
+  c.title = [n ? `a saved baseline (${n})` : '', others ? 'another message of this log' : ''].filter(Boolean).length
+    ? 'Compare this message with ' + [n ? `a saved baseline (${n})` : '', others ? 'another message of this log' : ''].filter(Boolean).join(' or ')
     : 'No baseline saved yet for this type code, DDL and parse spec — save one first';
 }
 
@@ -25615,7 +25904,7 @@ function openBaselines(opts) {
   closeSettings();
   // Opened from the header, this is a plain browse: nothing is a candidate for
   // anything, so nothing is dimmed.
-  if (!opts || !opts.keepSelection) { _blCmpKey = null; _blMode = 'view'; }
+  if (!opts || !opts.keepSelection) { _blCmpKey = null; _blMode = 'view'; _blMsgCmp = null; }
   document.getElementById('blOverlay').classList.remove('hidden');
   // Shared with the Class Editor: one drag handler, one saved-width restore,
   // and this overlay's gutter is just another row in its table.
@@ -25623,6 +25912,9 @@ function openBaselines(opts) {
   let sbC = false;
   try { sbC = localStorage.getItem('up_bl_sidebar_collapsed') === '1'; } catch(e) {}
   blSetSidebarCollapsed(sbC);
+  // Two messages need no list of baselines: the rail folds for this view only,
+  // without touching the remembered state.
+  if (_blMsgCmp) document.getElementById('bl-sidebar')?.classList.add('collapsed');
   const list = _blAll();
   if (!_blSel || !list.some(b => b.id === _blSel)) _blSel = list[0]?.id || null;
   _blColCfgOpen = false;
@@ -25632,6 +25924,7 @@ function openBaselines(opts) {
 
 function closeBaselines() {
   document.getElementById('blOverlay').classList.add('hidden');
+  _blMsgCmp = null;
 }
 
 function blTagToggle(tag) {
@@ -25658,7 +25951,7 @@ function blToggleSidebar() {
   blSetSidebarCollapsed(!document.getElementById('bl-sidebar')?.classList.contains('collapsed'));
 }
 
-function blSelect(id) { _blSel = id; blRenderSidebar(); blRenderRight(); }
+function blSelect(id) { _blSel = id; _blMsgCmp = null; blRenderSidebar(); blRenderRight(); }
 
 function blDeleteSelected() {
   const b = _blAll().find(x => x.id === _blSel);
@@ -25744,7 +26037,7 @@ function blRenderSidebar() {
 function _blSideMeta(o, isBaseline) {
   if (!o) return '';
   const bytes = isBaseline ? o.byteCount : (o.bytes || []).length;
-  const when  = isBaseline ? (o.savedAt ? 'saved ' + new Date(o.savedAt).toLocaleString() : '')
+  const when  = isBaseline && !o._msg ? (o.savedAt ? 'saved ' + new Date(o.savedAt).toLocaleString() : '')
                            : (o.time || '');
   const facts = [
     o.recNo ? 'Rec #' + o.recNo : '',
@@ -25756,7 +26049,9 @@ function _blSideMeta(o, isBaseline) {
   // the middle on both sides. Requested 2026-09-04.
   // The arrow points at the half the label belongs to, away from the rule the
   // two labels meet at.
-  const label = `<span class="bl-side-name">${isBaseline ? '◀ baseline' : 'current ▶'}</span>`;
+  const name  = o._msg ? `◀ message ${o._idx + 1}` : isBaseline ? '◀ baseline'
+              : _blMsgCmp ? `message ${S.curIdx + 1} ▶` : 'current ▶';
+  const label = `<span class="bl-side-name">${name}</span>`;
   const cells = facts.map(t => `<span>${_escHtml(String(t))}</span>`);
   // ONE group, so the half can push the facts to its outer edge and the label to
   // the inner one. Spread across seven separate children, space-between would
@@ -25771,7 +26066,9 @@ function _blSideMeta(o, isBaseline) {
 function blRenderRight() {
   const host = document.getElementById('bl-right');
   if (!host) return;
-  const b = _blAll().find(x => x.id === _blSel);
+  const _other = _blMsgCmp && S.messages[_blMsgCmp.idx];
+  const b = _other ? Object.assign(_blSnapshot(_other, `Message ${_blMsgCmp.idx + 1}`, []), { _msg: true, _idx: _blMsgCmp.idx })
+                   : _blAll().find(x => x.id === _blSel);
   if (!b) { host.innerHTML = `<div class="bl-empty">No baselines yet. Parse a message and press ★ Save in Parse Results.</div>`; return; }
 
   const cur = S.messages[S.curIdx];
@@ -25790,8 +26087,8 @@ function blRenderRight() {
       <span class="bl-title">${_escHtml(b.name)}</span>
       ${(b.tags || []).map(t => `<span class="bl-tag">${_escHtml(t)}</span>`).join('')}
       <span style="flex:1"></span>
-      <button class="btn" onclick="blRenameSelected()">Rename</button>
-      <button class="btn" onclick="blRetagSelected()">Tags</button>
+      ${b._msg ? '' : `<button class="btn" onclick="blRenameSelected()">Rename</button>
+      <button class="btn" onclick="blRetagSelected()">Tags</button>`}
       <div style="position:relative;display:inline-flex">
         <button class="btn" id="blColCfgBtn" onclick="toggleBlColCfg()" title="Column visibility"
                 style="padding:0 6px">⚙</button>
@@ -25824,7 +26121,8 @@ function blRenderRight() {
     </div>`;
 
   const ttl = document.getElementById('bl-pane-title');
-  if (ttl) ttl.textContent = mode === 'compare' ? 'Baseline vs current parse' : 'Baseline';
+  if (ttl) ttl.textContent = b._msg ? `Message ${b._idx + 1} vs message ${S.curIdx + 1}`
+                          : mode === 'compare' ? 'Baseline vs current parse' : 'Baseline';
   host.innerHTML = head + _blTableHtml(b, cur, mode === 'compare');
   // Same two behaviours every other table in the app has: drag an edge to
   // resize (double-click one to reset), click a header to light its column.
@@ -44848,6 +45146,18 @@ function _meSave() {
     <div class="ddl-doc-body" id="followBody"></div>
   </div>
 </div>
+<div class="modal-overlay hidden" id="statsOverlay" onmousedown="if(event.target===this)closeStats()">
+  <div class="ddl-doc-modal" style="width:min(900px,96vw)">
+    <div class="ddl-doc-hdr">
+      <span class="ddl-doc-title">Log statistics</span>
+      <span class="cp-ico cp-empty" data-cp="stats" onclick="event.stopPropagation();_cpCopy('stats', this)" ondblclick="event.stopPropagation()" onmouseenter="_tipShow(this,'Copy to clipboard')" onmouseleave="_tipHide()">⧉</span>
+      <div style="display:flex;gap:6px;align-items:center;flex-shrink:0;margin-left:auto">
+        <button class="btn btn-ico" onclick="closeStats()">✕</button>
+      </div>
+    </div>
+    <div class="ddl-doc-body" id="statsBody"></div>
+  </div>
+</div>
 <div class="modal-overlay hidden" id="journalOverlay" onmousedown="if(event.target===this)closeJournal()">
   <div class="ddl-doc-modal" style="width:min(980px,96vw)">
     <div class="ddl-doc-hdr">
@@ -44869,6 +45179,9 @@ function _meSave() {
       <input id="expFilterInput" placeholder="Filter messages…" oninput="filterExpTable()" autocomplete="off">
       <div style="display:flex;gap:6px;align-items:center;flex-shrink:0">
         <label class="exp-mask-lbl" title="Hide the fields a class shows as &quot;masked&quot; — starts from Settings → Mask sensitive fields → Export files"><input type="checkbox" id="expMaskChk" checked onchange="expMaskChange(this)"> Mask sensitive fields</label>
+        <select class="me-sel" id="expFmt" onchange="_expFmtChange(this.value)" title="File format — Text to read, CSV for a spreadsheet (one row per message, one column per field), JSON for a program">
+          <option value="txt">Text</option><option value="csv">CSV</option><option value="json">JSON</option>
+        </select>
         <button class="btn btn-primary" onclick="doMsgExport()">⬇ Download</button>
         <div style="position:relative;display:inline-flex">
           <button class="btn btn-ico" id="exp-cols-btn" onclick="_expToggleColsDlg()" title="Choose which columns the file carries">⚙</button>
@@ -45150,7 +45463,7 @@ function _meSave() {
               <li>Right-click <strong>Volume</strong> → New Subvolume / Paste / Copy / Export Volume… / Rename… / Exclude from auto-detect / Delete</li>
               <li>Right-click <strong>Subvolume</strong> → New File / Paste / Copy / Export Subvolume… / Rename… / Exclude from auto-detect / Delete</li>
               <li>Right-click <strong>file</strong> → Copy / Export… / Rename… / Exclude from auto-detect / Delete</li>
-              <li>Right-click <strong>definition (DEF)</strong> → Copy / <strong>Use for parsing (override)</strong> / Exclude DEF from parsing. A flat DDL has no definitions, so the file itself offers <em>Use for parsing</em></li>
+              <li>Right-click <strong>definition (DEF)</strong> → Copy / Rename DEF… / <strong>Use for parsing (override)</strong> / Exclude DEF from parsing / Delete DEF — rename and delete touch that definition only, not its file. A flat DDL has no definitions, so the file itself offers <em>Use for parsing</em></li>
               <li><strong>Excluded</strong> nodes are never tried when the parser searches for a DDL</li>
               <li>Drop a <code>.json</code> export file onto the tree pane to import it</li>
             </ul>
@@ -45181,7 +45494,7 @@ function _meSave() {
             <p style="margin:0 0 6px"><strong>📂 Audit</strong> in the Data Input header opens a binary audit file and lists its records — line, Rec#, length, timestamp, origin and destination, message number and record type.</p>
             <ul style="padding-left:16px;margin:0">
               <li><strong>Filters</strong> — Source / Dest (<strong>OR</strong> or <strong>AND</strong>), Rec# range (▶ / ◀ sets the direction), Date and Time ranges, and a maximum Count. <strong>⚙</strong> chooses which filters are shown</li>
-              <li><strong>Click a record</strong> to inspect it: a dump opens beside the list; <strong>HEX</strong> toggles between the hex dump and the character view (ASCII or EBCDIC). Double-click its header to copy the dump</li>
+              <li><strong>Click a record</strong> to inspect it: a dump opens beside the list; <strong>HEX</strong> toggles between the hex dump and the character view (ASCII or EBCDIC). <strong>⧉</strong> in its header copies the dump</li>
               <li><strong>&lt; &gt;</strong> or the arrow keys step between records (<kbd>Shift</kbd> for 10); <strong>#</strong> goes to a line number, or to the first / last record</li>
               <li><strong>▶ Parse</strong> loads the record into Data Input and parses it; <strong>Auto</strong> parses each record as you select it</li>
             </ul>
@@ -45280,7 +45593,7 @@ function _meSave() {
               <li><strong>rules ok/n</strong> badge — after the type code, when the class has business rules that apply to the message: green when all pass, amber when some fail, red when all do. Click it for the rules that failed, why each applied and what failed. A met rule with a tag shows that tag beside it</li>
               <li>An amber bar says when the message changed after it was parsed — press ▶ Parse to refresh</li>
               <li>A message that fails says why — unknown type, no parse spec, no matching DDL — with a link to fix it</li>
-              <li><strong>Double-click</strong> the panel title or the <strong>n / m</strong> counter to copy every field of the message as tab-separated text (Field ID, Description, Len, Value); double-click a row to copy just that field</li>
+              <li><strong>⧉</strong> beside the title copies the panel as it is shown — the visible columns and rows, tab-separated; rest the pointer on a row and its own <strong>⧉</strong> appears to copy just that field</li>
             </ul>
           </div></div>
 
@@ -45289,7 +45602,7 @@ function _meSave() {
           <div class="h-sub-body"><div class="h-sub-body-inner">
             <ul style="padding-left:16px;margin:0">
               <li>The message's bytes as a hex dump beside their characters; the field selected in Parse Results is highlighted here</li>
-              <li><strong>Double-click</strong> the panel header to copy the dump</li>
+              <li><strong>⧉</strong> beside the title copies the dump; resting on a line shows a <strong>⧉</strong> that copies that line</li>
               <li>Collapse the panel and Parse Results gains a <strong>Raw Hex</strong> column instead; <strong>Settings → Raw Hex</strong> chooses whether that column is truncated or shown in full</li>
             </ul>
           </div></div>
@@ -45330,11 +45643,11 @@ function _meSave() {
             <p style="margin:0 0 4px;font-weight:700">Classes &amp; DDLs (bundles):</p>
             <ul style="padding-left:16px;margin:0 0 8px">
               <li><strong>Export</strong> — right-click the tree (empty area, Volume, Subvolume or file) → Export; tick the <strong>Classes</strong> and <strong>DDLs</strong> to include and save a <code>.json</code> bundle. <em>Keep classes and their DDLs together</em> ticks a class's DDLs with it, and the other way round</li>
-              <li><strong>Import</strong> — right-click → Import, or drop a <code>.json</code> bundle onto the tree; a preview lets you pick what to bring in and marks what will be <strong>overwritten</strong></li>
+              <li><strong>Import</strong> — right-click → Import, or drop a <code>.json</code> bundle onto the tree; a preview lets you pick what to bring in and marks what will be <strong>overwritten</strong>. Until it is saved, <strong>Discard import</strong> (beside the Class Editor button, and beside Save inside it) takes it back out</li>
             </ul>
             <p style="margin:0 0 4px;font-weight:700">Parsed messages:</p>
             <ul style="padding-left:16px;margin:0">
-              <li><strong>Export</strong> in Parse Results — pick messages (with a filter), choose the columns with <strong>⚙</strong>, and <strong>⬇ Download</strong> a <code>.txt</code> file</li>
+              <li><strong>Export</strong> in Parse Results — pick messages (with a filter), choose the format and <strong>⬇ Download</strong>: <strong>Text</strong>, a <code>.txt</code> file to read, with the columns chosen with <strong>⚙</strong>; <strong>CSV</strong>, one row per message and one column per field, for a spreadsheet; <strong>JSON</strong>, every field with all it carries, for a program</li>
               <li><strong>Export</strong> in Track Mode — the selected rows of the tracking table, as a <code>.txt</code> file</li>
             </ul>
           </div></div>

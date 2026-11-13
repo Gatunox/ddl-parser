@@ -22124,7 +22124,8 @@ test('baselines: the metadata says which side each fact belongs to', () => {
   assert.ok(/<div class="bl-side bl-side-r">\$\{isCmpNow \? _blSideMeta\(cur, false\) : ''\}<\/div>/.test(fn),
     'the right half is the current parse, and is empty when not comparing');
   const side = psFnSource('_blSideMeta');
-  assert.ok(/isBaseline \? '◀ baseline' : 'current ▶'/.test(side),
+  // Two messages compared name each side by number (2026-11-12).
+  assert.ok(/isBaseline \? '◀ baseline'\s*: _blMsgCmp \? `message \$\{S\.curIdx \+ 1\} ▶` : 'current ▶'/.test(side),
     'each half names itself, with the arrow pointing at the half it belongs to');
   assert.ok(/isBaseline \? o\.byteCount : \(o\.bytes \|\| \[\]\)\.length/.test(side),
     'a baseline knows its byte count; a live parse is measured');
@@ -22460,7 +22461,8 @@ test('baselines: Save and Compare, and Compare only when something matches', () 
     'and an unrecognised message has no key at all, so it matches nothing');
 
   const sync = psFnSource('syncBlSaveBtn');
-  assert.ok(/c\.disabled = !n;/.test(sync), 'Compare is disabled when nothing matches');
+  // Since 2026-11-12 another message of the log is something to compare with too.
+  assert.ok(/c\.disabled = !n && !others;/.test(sync), 'Compare is disabled when nothing matches');
   assert.ok(/No baseline saved yet for this type code, DDL and parse spec/.test(sync),
     'and says why, rather than being mysteriously dead');
 
@@ -22471,7 +22473,7 @@ test('baselines: Save and Compare, and Compare only when something matches', () 
   assert.ok(/openBaselines\(\{ keepSelection: true \}\)/.test(cmp),
     'and that choice survives the open');
   // Opened from the header instead, nothing is a candidate for anything.
-  assert.ok(/if \(!opts \|\| !opts\.keepSelection\) \{ _blCmpKey = null; _blMode = 'view'; \}/.test(psFnSource('openBaselines')),
+  assert.ok(/if \(!opts \|\| !opts\.keepSelection\) \{ _blCmpKey = null; _blMode = 'view'; _blMsgCmp = null; \}/.test(psFnSource('openBaselines')),
     'a plain browse dims nothing');
 
   // The others stay selectable — dimmed, not hidden or disabled.
@@ -25220,7 +25222,11 @@ test('[REGRESSION] the help does not promise that a blank line separates pasted 
   });
 
   test('[REGRESSION] Help: message exports are described in the format they are written in', () => {
-    assert.ok(/a\.download = `messages-export-\$\{[^`]*\}\.txt`/.test(html), 'the message export changed format — update Help');
+    // Three formats since 2026-11-12: the file takes the chosen one's extension.
+    assert.ok(/a\.download = `messages-export-\$\{[^`]*\}\.\$\{fmt\}`/.test(html), 'the message export changed format — update Help');
+    const exH = helpSection('Export / Import');
+    for (const w of ['<strong>Text</strong>', '<strong>CSV</strong>', '<strong>JSON</strong>'])
+      assert.ok(exH.includes(w), `Help does not describe the ${w} export`);
     assert.ok(/a\.download = `track-export-\$\{[^`]*\}\.txt`/.test(html), 'the Track export changed format — update Help');
     const ex = helpSection('Export / Import');
     assert.ok(!/messages to a <code>\.json<\/code>/.test(ex), 'Help still says messages export to .json');
@@ -28308,6 +28314,203 @@ console.log('\nClass Editor — Undo on the last removals without it');
       withFns({ _meSetDirty: noop, _meRenderSidebar: noop, _meRenderRight: noop, _meFlash: noop }, () => undo.run());
       eq(run('_meState.selIdx'), 2, 'the restored class is not the one selected');
     } finally { sandbox.__ms = keep; run('_meState = __ms'); }
+  });
+}
+console.log('\nExport — CSV and JSON');
+{
+  const run = c => vm.runInContext(c, sandbox);
+  const msgs = () => [
+    { msg: { msgType: { type: 'ISO' }, bytes: [1, 2, 3], ddlPath: 'V/S/F',
+             fields: [{ id: 'MTI', value: '0200', valueLength: 4 }, { id: 'PAN', value: '4111111111111111', valueLength: 16, rawHex: 'AB' },
+                      { id: 'NOTE', value: 'a, "b"', valueLength: 6 }] }, idx: 0 },
+    { msg: { msgType: { type: 'ISO' }, bytes: [1], fields: [{ id: 'MTI', value: '0210' }, { id: 'DE39', value: '00' }, { id: 'DE39', value: '05' }] }, idx: 1 },
+  ];
+
+  test('[REGRESSION] CSV: one row per message, one column per field, quoted where it must be', () => {
+    run('_expMaskOn = false');
+    const csv = run('_expCsv')(msgs());
+    assert.ok(csv.startsWith('﻿'), 'no BOM — Excel misreads accents');
+    const lines = csv.slice(1).split('\r\n');
+    eq(lines[0], 'MESSAGE,TYPE,MTI,TIME,SOURCE,DEST,BYTES,MTI,PAN,NOTE,DE39', 'the header');
+    eq(lines[1], '1,ISO,0200,,V/S/F,,3,0200,4111111111111111,"a, ""b""",', 'the first message, quoted and with an empty DE39');
+    eq(lines[2], '2,ISO,0210,,,,1,0210,,,00 | 05', 'a missing field is empty, a repeated one keeps both values');
+    run('_expMaskOn = true');
+  });
+
+  test('[REGRESSION] JSON: every field with what it carries; both formats mask for export', () => {
+    run('_expMaskOn = false');
+    const j = JSON.parse(run('_expJson')(msgs()));
+    eq(j.length, 2, 'one entry per message');
+    eq(JSON.stringify(j[0].fields[1]), JSON.stringify({ id: 'PAN', description: '', bytes: 16, value: '4111111111111111', rawHex: 'AB' }), 'a field');
+    eq(j[1].mti, '0210', 'the message facts');
+    sandbox.__mf = (m, f) => f.id === 'PAN' ? Object.assign({}, f, { value: '411111******1111', rawHex: '**' }) : f;
+    run('__omf = _maskField; _maskField = __mf; _expMaskOn = true');
+    try {
+      const csv = run('_expCsv')(msgs());
+      assert.ok(csv.includes('411111******1111') && !csv.includes('4111111111111111'), 'CSV is not masked');
+      eq(JSON.parse(run('_expJson')(msgs()))[0].fields[1].value, '411111******1111', 'JSON is not masked');
+    } finally { run('_maskField = __omf; _expMaskOn = true'); }
+    const dl = psFnSource('doMsgExport');
+    assert.ok(/if \(fmt === 'csv'\)\s+\{ body = _expCsv\(picked\);/.test(dl) && /else if \(fmt === 'json'\) \{ body = _expJson\(picked\);/.test(dl),
+      'Download does not write the chosen format');
+    assert.ok(/<select class="me-sel" id="expFmt"/.test(html), 'there is no format choice');
+  });
+
+  test('[REGRESSION] Help describes copying with ⧉, not with a double-click', () => {
+    // The double-click copies went in v1.65.0.0 and Help went on describing them.
+    const HELP = html.slice(html.indexOf('<div class="settings-help">'), html.indexOf('<!-- ── FEEDBACK'));
+    assert.ok(!/<strong>Double-click<\/strong>[^<]*(to )?copy/i.test(HELP), 'Help still copies on double-click');
+    assert.ok(!/Double-click its header to copy/.test(HELP), 'Help still copies the audit dump on double-click');
+  });
+}
+console.log('\nCompare two messages of a log');
+{
+  const run = c => vm.runInContext(c, sandbox);
+  const withFns = (map, body) => {
+    const names = Object.keys(map);
+    names.forEach((n, i) => { sandbox['__c' + i] = run(n); sandbox['__d' + i] = map[n]; run(`${n} = __d${i}`); });
+    try { return body(); } finally { names.forEach((n, i) => run(`${n} = __c${i}`)); }
+  };
+  const noop = () => {};
+  const mk = (type, v) => ({ msgType: { type }, ddlPath: 'V/S/F', parsedBy: 'spec', bytes: [1, 2],
+                              fields: [{ id: 'MTI', value: v, dataType: 'X' }] });
+
+  test('[REGRESSION] Compare can line up two messages of the log, of the same shape only', () => {
+    const st = run('S'), was = { m: st.messages, i: st.curIdx, p: st.isParsed };
+    const said = [];
+    let opened = 0;
+    try {
+      st.messages = [mk('ISO', '0200'), mk('ISO', '0210'), mk('STM', 'x')]; st.curIdx = 1; st.isParsed = true;
+      withFns({ flash: m => said.push(m), openBaselines: () => { opened++; } }, () => {
+        eq(run('blCompareMsg(1)'), false, 'a message compared with itself');
+        eq(run('blCompareMsg(2)'), false, 'two shapes were lined up');
+        assert.ok(/would not line up/.test(said.join()), 'the refusal does not say why');
+        eq(opened, 0, 'a refused comparison opened anyway');
+        eq(run('blCompareMsg(0)'), true, 'a comparable message was refused');
+        eq(opened, 1, 'the comparison did not open');
+        eq(run('_blMsgCmp.idx'), 0, 'the left side is not message 1');
+        eq(run('_blMode'), 'compare', 'it did not open comparing');
+      });
+      // What the comparison shows: the two messages by number, no baseline controls.
+      const host = { innerHTML: '' }, ttl = { textContent: '' };
+      Object.assign(elStubs, { 'bl-right': host, 'bl-pane-title': ttl });
+      try {
+        withFns({ _blApplyColVis: noop, _blSyncColCfg: noop, _meColInitResize: noop, _meInitColHighlight: noop,
+                  _blInitFitOnDblClick: noop, _blInitScrollSync: noop }, () => run('blRenderRight()'));
+      } finally { delete elStubs['bl-right']; delete elStubs['bl-pane-title']; }
+      eq(ttl.textContent, 'Message 1 vs message 2', 'the title');
+      assert.ok(host.innerHTML.includes('◀ message 1') && host.innerHTML.includes('message 2 ▶'), 'the sides are not named by message');
+      assert.ok(!/blRenameSelected|blRetagSelected/.test(host.innerHTML), 'two messages offer to rename a baseline');
+      assert.ok(/0200/.test(host.innerHTML) && /0210/.test(host.innerHTML), 'both values are not shown');
+      // Leaving it ends it, so the next open is the baseline browser again.
+      run('closeBaselines()');
+      eq(run('_blMsgCmp'), null, 'the comparison outlives the overlay');
+    } finally { st.messages = was.m; st.curIdx = was.i; st.isParsed = was.p; run('_blMsgCmp = null; _blMode = "view"; _blCmpKey = null'); }
+  });
+
+  test('[REGRESSION] the Compare button offers what exists: a baseline, another message, or both', () => {
+    const st = run('S'), was = { m: st.messages, i: st.curIdx };
+    let menu = null, ran = '';
+    try {
+      st.messages = [mk('ISO', '0200'), mk('ISO', '0210')]; st.curIdx = 0;
+      withFns({ _blMatchesFor: () => [], showCtxMenu: (x, y, items) => { menu = items; }, blCompareMsgPrompt: () => { ran = 'msg'; } },
+        () => run('blCompareMenu({ target: { getBoundingClientRect: () => ({ left: 0, bottom: 0 }) } })'));
+      eq(ran, 'msg', 'with no baseline it does not go straight to picking a message');
+      eq(menu, null, 'one choice still opened a menu');
+      withFns({ _blMatchesFor: () => [{}, {}], showCtxMenu: (x, y, items) => { menu = items; } },
+        () => run('blCompareMenu({ target: { getBoundingClientRect: () => ({ left: 0, bottom: 0 }) } })'));
+      eq(menu.map(m => m.label).join(' / '), 'With a saved baseline (2) / With another message…', 'the menu');
+    } finally { st.messages = was.m; st.curIdx = was.i; }
+  });
+}
+console.log('\nDDL picker — field preview');
+{
+  const run = c => vm.runInContext(c, sandbox);
+  const withFns = (map, body) => {
+    const names = Object.keys(map);
+    names.forEach((n, i) => { sandbox['__p' + i] = run(n); sandbox['__q' + i] = map[n]; run(`${n} = __q${i}`); });
+    try { return body(); } finally { names.forEach((n, i) => run(`${n} = __p${i}`)); }
+  };
+
+  test('[REGRESSION] the DDL picker previews what each candidate reads from the message', () => {
+    // A choice between candidates was made on a score alone.
+    const fields = [{ id: 'HDR', isGroup: true }, { id: 'MTI', value: '0200' }, { id: 'PAN', value: '4111111111111111' }]
+      .concat(Array.from({ length: 10 }, (_, i) => ({ id: 'F' + i, value: '<' + i + '>' })));
+    let asked = null;
+    run('__pms = P.maskScreen; P.maskScreen = true');
+    let html;
+    try {
+      html = withFns({ _fieldsForChosen: (t, m, pb, rb) => { asked = [m.defName, pb, rb]; return { fields }; },
+                       _maskField: (msg, f) => f.id === 'PAN' ? Object.assign({}, f, { value: '411111******1111' }) : f },
+        () => run('_ppPreviewHtml')({ type: 'ISO' }, { defName: 'D1' }, { parseBytes: [1], rawBytes: [2] }));
+    } finally { run('P.maskScreen = __pms'); }
+    eq(JSON.stringify(asked), JSON.stringify(['D1', [1], [2]]), 'the candidate did not read the sample');
+    assert.ok(/<span class="pp-pv-id">MTI<\/span><span class="pp-pv-val">0200<\/span>/.test(html), 'the first field is not shown');
+    assert.ok(!/HDR/.test(html), 'a group row is shown as a field');
+    assert.ok(/411111\*\*\*\*\*\*1111/.test(html) && !/4111111111111111/.test(html), 'the preview ignores screen masking');
+    eq((html.match(/pp-pv-row/g) || []).length, 8, 'the preview is not capped');
+    assert.ok(/13 fields in all/.test(html), 'it does not say how many there are');
+    assert.ok(/&lt;0&gt;/.test(html), 'a value is not escaped');
+    const empty = withFns({ _fieldsForChosen: () => { throw new Error('no'); } },
+      () => run('_ppPreviewHtml')({ type: 'ISO' }, { defName: 'D2' }, { parseBytes: [], rawBytes: [] }));
+    assert.ok(/reads no fields/.test(empty), 'a candidate that fails says nothing');
+    // Wired: both flows hand the picker a sample, and the picker follows pointer and focus.
+    eq((APP_SRC.match(/typePickerQueue\.push\(\{ msgType, allMatches, sample: \{ parseBytes, rawBytes: bytes \} \}\)/g) || []).length, 2,
+      'a parse flow gives the picker nothing to preview');
+    assert.ok(/\}, msgType, _meSpecNeedsBinding\(msgType\), sample\);/.test(psFnSource('_drainTypePickers')), 'the sample is not passed on');
+    const pick = psFnSource('_showProgressPicker');
+    assert.ok(/btn\.addEventListener\('mouseenter', \(\) => preview\(i\)\);/.test(pick)
+           && /btn\.addEventListener\('focus', \(\) => preview\(i\)\);/.test(pick), 'the preview does not follow pointer and keyboard');
+  });
+}
+console.log('\nLog statistics');
+{
+  const run = c => vm.runInContext(c, sandbox);
+  const withFns = (map, body) => {
+    const names = Object.keys(map);
+    names.forEach((n, i) => { sandbox['__s' + i] = run(n); sandbox['__t' + i] = map[n]; run(`${n} = __t${i}`); });
+    try { return body(); } finally { names.forEach((n, i) => run(`${n} = __s${i}`)); }
+  };
+  const m = (mti, stan, rc, time, extra = {}) => Object.assign({
+    isNetard: true, recNo: 1, time, _mti: mti, msgType: { type: 'ISO', label: 'ISO 8583' },
+    fields: [stan ? { id: 'STAN', deNum: 11, value: stan } : null, rc ? { id: 'RESP', deNum: 39, value: rc } : null].filter(Boolean),
+  }, extra);
+
+  test('[REGRESSION] statistics count by class, MTI and response code, and pair requests with responses', () => {
+    const log = [
+      m('0200', '000001 ', '', '11/12/26 10:00:00.00'),          // padded: a STAN is compared trimmed
+      m('0200', '000002', '', '11/12/26 10:00:01.00'),
+      m('0210', '000001', '00', '11/12/26 10:00:00.25'),
+      m('0210', '000002', '05', '11/12/26 10:00:03.00'),
+      m('0420', '000003', '', '11/12/26 10:00:04.00'),                    // never answered
+      m('', '', '', '', { msgType: { type: 'STM', label: 'STM' }, noMatchDDL: true, fields: [] }),
+      m('0200', '000004', '', '', { fields: [{ id: 'X', deNum: 11, value: '000004' }, { id: 'BAD', error: 'cut short' }] }),
+    ];
+    const st = withFns({ _followMti: msg => msg._mti || '' }, () => run('_logStats')(log));
+    eq(st.total, 7);
+    eq(JSON.stringify([...st.byClass]), JSON.stringify([['ISO 8583', [0, 1, 2, 3, 4, 6]], ['STM', [5]]]), 'by class');
+    eq(JSON.stringify([...st.byMti]), JSON.stringify([['0200', [0, 1, 6]], ['0210', [2, 3]], ['0420', [4]]]), 'by MTI — read only where the class reads one');
+    eq(JSON.stringify([...st.byResp]), JSON.stringify([['00', [2]], ['05', [3]]]), 'by DE 39');
+    eq(JSON.stringify(st.noDdl), '[5]', 'not parsed'); eq(JSON.stringify(st.withErr), '[6]', 'with an error');
+    eq(JSON.stringify(st.pairs.map(p => [p.req, p.resp, p.ms])), JSON.stringify([[0, 2, 250], [1, 3, 2000]]),
+      'a response answers its own request, by MTI and STAN (trimmed), with the time between them');
+    eq(JSON.stringify(st.unanswered), '[4,6]', 'the requests nothing answered');
+    eq(JSON.stringify(st.timing), JSON.stringify({ n: 2, min: 250, max: 2000, avg: 1125 }), 'min, avg and max');
+    eq(st.slowest[0].ms, 2000, 'the slowest first');
+    // Two open requests with one STAN: the response answers the EARLIER one.
+    const twice = [m('0200', '7', '', '11/12/26 10:00:00.00'), m('0200', '7', '', '11/12/26 10:00:05.00'), m('0210', '7', '00', '11/12/26 10:00:06.00')];
+    const st2 = withFns({ _followMti: msg => msg._mti || '' }, () => run('_logStats')(twice));
+    eq(JSON.stringify(st2.pairs.map(p => [p.req, p.resp])), '[[0,2]]', 'the response answered the later request');
+    eq(JSON.stringify(st2.unanswered), '[1]', 'the later request is the open one');
+  });
+
+  test('[REGRESSION] Stats is offered with more than one message, and every row opens its messages', () => {
+    assert.ok(/sb\.style\.display = on && S\.messages\.length > 1 \? 'inline-flex' : 'none';/.test(psFnSource('syncBlSaveBtn')), 'the button does not follow the parse');
+    assert.ok(/<tr data-g="\$\{g\(idxs\)\}" onclick="statsShow\(this\)"/.test(psFnSource('openStats')), 'a row does not open its messages');
+    assert.ok(/onclick="statsGo\(\$\{i\}\)"/.test(psFnSource('statsShow')), 'a message in the list does not open');
+    assert.ok(/closeStats\(\); jumpTo\(i\);/.test(psFnSource('statsGo')), 'opening a message does not go to it');
+    // MTI is never guessed from a field name, as in Follow.
+    assert.ok(/const mti = _followMti\(msg\);/.test(psFnSource('_logStats')), 'the MTI is read some other way than Follow reads it');
   });
 }
 // ── Summary ───────────────────────────────────────────────────────────────────

@@ -28912,6 +28912,16 @@ END
     deepEq(badges, ['2', '2.1', '2.3', '3'], 'subfield badges');
   });
 
+  test('[REGRESSION] the reference shows subfields read by blocks, and the example runs clean', () => {
+    const ex = vm.runInContext('_PS_HELP', sandbox)['read-bitmap-fields'].examples
+      .find(e => e && e.what && /<b>subfields<\/b> with <b>blocks<\/b>/.test(e.what));
+    assert.ok(ex, 'no example shows a subfield read by its blocks');
+    const f = mePsHelpRunExample(ex).fields;
+    deepEq(f.filter(x => x.error).map(x => x.error), [], 'the example reports errors');
+    eq((f.find(x => x.id === 'F62.USER-DATA.DATA') || {}).value, 'ABC', 'the blocks did not read only what came');
+    eq((f.find(x => x.id === 'F62.LAST') || {}).value, 'Z', 'the next subfield starts at the wrong place');
+  });
+
   test('[REGRESSION] the linter checks "subfields" entries', () => {
     S.ddlTree = { V: { S: { D: SUB_DDL } } };
     const lintOf = sub => {

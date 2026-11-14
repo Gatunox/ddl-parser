@@ -23691,7 +23691,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.69.1.1';
+const APP_VERSION  = '1.69.1.2';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -28446,6 +28446,21 @@ const _PS_HELP = {
                  {"read-bitmap": {"field": "SF-BMP", "length": 8, "encoding": "binary"}},
                  {"read-bitmap-fields": {"bitmap": "SF-BMP", "subfields": {
                    "1": {"field": "AUTH-IND"}, "2": {"field": "TRAN-ID"}, "3": {"field": "VALID"}}}}]}}}] },
+      // The DDL declares the most a subfield can hold; its blocks say how it is
+      // read. Any blocks: read-length-value here, so only what came is taken.
+      { what: '<b>subfields</b> with <b>blocks</b> — subfield 3 is declared LEN + DATA X(99), the most it can hold; its blocks read it with <code>read-length-value</code>, so only the 3 bytes that came are taken and LAST follows right after',
+        ddl: 'DEFINITION MSG.\n  02 BITMAP PIC X(8).\n  02 PAD PIC X(1).\n  02 F62.\n    04 SF-BMP PIC X(8).\n    04 AUTH-IND PIC X(1).\n    04 TRAN-ID PIC X(4).\n    04 USER-DATA.\n      06 LEN PIC 9(2).\n      06 DATA PIC X(99).\n    04 LAST PIC X(1).\nEND\n',
+        def: 'MSG',
+        payload: '40 00 00 00 00 00 00 00 B0 00 00 00 00 00 00 00 59 30 33 41 42 43 5A',
+        spec: [{"read-bitmap": {"field": "BITMAP", "encoding": "binary"}},
+               {"read-bitmap-fields": {"bitmap": "BITMAP", "de": {"2": [
+                 {"read-bitmap": {"field": "SF-BMP", "length": 8, "encoding": "binary"}},
+                 {"read-bitmap-fields": {"bitmap": "SF-BMP", "subfields": {
+                   "1": {"field": "AUTH-IND"},
+                   "2": {"field": "TRAN-ID"},
+                   "3": {"field": "USER-DATA", "blocks": [
+                     {"read-length-value": {"length_encoding": "ascii", "length_size": 2, "as": "F62.USER-DATA.DATA"}}]},
+                   "4": {"field": "LAST"}}}}]}}}] },
       ['Standard usage after read-bitmap', [{"read-bitmap": {"field": "BITMAP", "encoding": "hex"}}, {"read-bitmap-fields": "BITMAP"}]],
       ['DE-55 as EMV TLV, everything else as usual', [{"read-bitmap-fields": {"bitmap": "BITMAP", "de": {
         "55": [{"read-tlv": {"ber": true, "tags": {"9F26": {"field": "ARQC"}, "9F36": {"field": "ATC"}}}}]

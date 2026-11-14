@@ -28912,6 +28912,18 @@ END
     deepEq(badges, ['2', '2.1', '2.3', '3'], 'subfield badges');
   });
 
+  test('[REGRESSION] an example\'s brackets are coloured by depth, each pair alike', () => {
+    // Asked 2026-11-14: in the nested examples it was hard to see which bracket
+    // closed which.
+    const hl = vm.runInContext('_meHighlightJsonc', sandbox);
+    const out = hl('[{"a": {"b": ["x{y", 1]}}, {"c": 2}]');
+    const br = [...out.matchAll(/<span class="hl-br-(\d)">([\[\]{}])<\/span>/g)].map(m => m[2] + m[1]).join(' ');
+    eq(br, '[0 {1 {2 [0 ]0 }2 }1 {1 }1 ]0', 'brackets by depth, a pair sharing one colour');
+    assert.ok(/<span class="hl-str">[^<]*x\{y[^<]*<\/span>/.test(out), 'a bracket inside a string was coloured');
+    for (const v of ['--br-1', '--br-2', '--br-3'])
+      eq((html.match(new RegExp(`${v}: #`, 'g')) || []).length, 2, `${v} is not set for both themes`);
+  });
+
   test('[REGRESSION] the reference shows subfields read by blocks, and the example runs clean', () => {
     const ex = vm.runInContext('_PS_HELP', sandbox)['read-bitmap-fields'].examples
       .find(e => e && e.what && /<b>subfields<\/b> with <b>blocks<\/b>/.test(e.what));

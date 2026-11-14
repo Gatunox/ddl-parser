@@ -224,6 +224,8 @@
   --hb-masked: #566070;
   --lw-marker: #30363d;
   --str-lit: #c3e88d;
+  /* bracket pairs in help examples, by depth — three that cycle */
+  --br-1: #ffd700;  --br-2: #da70d6;  --br-3: #4fb4ff;
   --warn-text: #e6a817;
   --redef-fg: rgba(var(--accent-rgb),0.65);
   /* validation bar */
@@ -343,6 +345,7 @@
   --hb-masked: #c8ccd0;
   --lw-marker: #c8cdd5;
   --str-lit: #3a7d0a;
+  --br-1: #9a6b00;  --br-2: #a626a4;  --br-3: #0b65c2;
   --warn-text: #8a6000;
   --redef-fg: rgba(var(--accent-rgb),0.75);
   --vbar-err-bg: rgba(200,30,30,0.06);  --vbar-err-bd: rgba(200,30,30,0.20);  --vbar-err-fg: #b03030;
@@ -1197,6 +1200,9 @@ input.tree-search:focus, #treeSearch:focus { border-color: var(--accent); }
 .hl-seq          { color: var(--warning); }
 .hl-val          { color: #e6c07b; }
 .hl-str          { color: var(--str-lit); }
+/* An example's brackets, coloured by depth so the eye can find which one closes
+   which. Three colours cycle; a pair always shares one. */
+.hl-br-0 { color: var(--br-1); } .hl-br-1 { color: var(--br-2); } .hl-br-2 { color: var(--br-3); }
 .hl-lvl          { color: var(--warning); }
 .hl-def          { color: var(--accent2); }
 .hl-pic          { color: var(--accent); }
@@ -23691,7 +23697,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.69.1.2';
+const APP_VERSION  = '1.69.1.3';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -29685,12 +29691,25 @@ function _meHighlightJsonc(text) {
   const tokens = _tokenizeJsonc(text);
   let html = '';
   let cursor = 0;
+  // Brackets are only ever in the text BETWEEN tokens — strings and comments
+  // are tokens — so a bracket inside "a{b" is never counted. Each pair shares
+  // the colour of its depth, which is what makes the closer findable.
+  let depth = 0;
+  const gap = t => {
+    let out = '';
+    for (const ch of t) {
+      if (ch === '{' || ch === '[') { out += `<span class="hl-br-${depth % 3}">${ch}</span>`; depth++; }
+      else if (ch === '}' || ch === ']') { depth = Math.max(0, depth - 1); out += `<span class="hl-br-${depth % 3}">${ch}</span>`; }
+      else out += _escHtml(ch);
+    }
+    return out;
+  };
   for (const tok of tokens) {
-    if (tok.from > cursor) html += _escHtml(text.slice(cursor, tok.from));
+    if (tok.from > cursor) html += gap(text.slice(cursor, tok.from));
     html += `<span class="${tok.cls}">${_escHtml(text.slice(tok.from, tok.to))}</span>`;
     cursor = tok.to;
   }
-  if (cursor < text.length) html += _escHtml(text.slice(cursor));
+  if (cursor < text.length) html += gap(text.slice(cursor));
   return html;
 }
 

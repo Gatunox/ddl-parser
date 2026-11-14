@@ -9273,6 +9273,16 @@ function _meOvEffectiveLen(ovr) {
 // NaN (then `|| 1`).
 const _meDeIsAnchor = v => typeof v === 'number'
   || (typeof v === 'string' && /^\d+$/.test(v.trim()));
+// A SUBFIELD number — "43.1" — set in Overrides on a field inside DE 43. It
+// numbers nothing in the message: the walk ignores it, and only a
+// `read-bitmap-fields` with "subfields" inside that DE reads it (TODO 26).
+const _meDeIsSub = v => typeof v === 'string' && /^\d+(\.\d+)+$/.test(v.trim());
+// "43.1" → field id, from the overrides. The first field to claim a number keeps it.
+function _meOvSubfields(item) {
+  const m = new Map(), all = _meOvAll(item);
+  for (const id in all) if (_meDeIsSub(all[id].de)) { const k = all[id].de.trim(); if (!m.has(k)) m.set(k, id); }
+  return m;
+}
 function _meOvDeAnchors(item) {
   const m = new Map();
   const all = _meOvAll(item);
@@ -23697,7 +23707,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.69.1.5';
+const APP_VERSION  = '1.69.1.6';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -28377,12 +28387,12 @@ const _PS_HELP = {
       ['subfields', '{ "<bit>": {field} | [blocks] | {field, blocks} }', false, [
         'The bitmap belongs to <b>one DE</b> and its bits number that DE\'s <b>subfields</b>: bit 1 is the first subfield, not DE 1. Visa\'s DE 62 is the case — 8 bytes of bitmap, then the subfields it marks.',
         'Used inside the DE\'s <code>de</code> entry, after a <code>read-bitmap</code> with <code>length</code>. The <code>length</code> is what makes bit 1 data: without it the ISO rule reads bit 1 as "a secondary bitmap follows".',
-        'Every subfield is mapped <b>by hand</b> — nothing is taken from the order of the DDL. Keys are bit numbers:',
+        'Every subfield is mapped <b>by hand</b> — nothing is taken from the order of the DDL. In <b>Overrides</b>, Data element → number <code>62.3</code> on a field makes it subfield 3; then <code>"subfields": {}</code> is enough, and an entry is needed only to read one with blocks. Here, keys are bit numbers:',
         ['<code>"1": {"field": "AUTH-IND"}</code>', 'Read that element as the DDL declares it — a leaf, or a group leaf by leaf, framed by its own LEN when it has one. The name resolves inside the DE.'],
-        ['<code>"3": [blocks]</code>', 'Read the subfield with its own blocks — any blocks. <code>{"field", "blocks"}</code> names the element the blocks run inside.'],
+        ['<code>"3": [blocks]</code>', 'Read the subfield with its own blocks — any blocks. <code>{"field", "blocks"}</code> names the element the blocks run inside; without <code>field</code>, it is the one Overrides numbers 62.3. A <code>field</code> here wins over Overrides.'],
         'With <code>blocks</code>, <b>the blocks decide</b> how the subfield is read: the engine reads no LEN first, and what the DDL declares is only the most it can hold. A subfield declared LEN + DATA X(99) and read by <code>read-length-value</code> takes only the bytes that came.',
         'Present subfields are read in bit order <b>at the cursor</b>: an absent one takes no room.',
-        'A bit that is set and has no entry — a reserved one, say — is reported and <b>ends the walk</b>: nothing says how long that subfield is, and reading on would put every later one in the wrong place.',
+        'A bit that is set and numbered nowhere — a reserved one, say — is reported and <b>ends the walk</b>: nothing says how long that subfield is, and reading on would put every later one in the wrong place.',
         'Rows carry the subfield\'s number, and Parse Results badges it: <code>DE-62.1</code>.',
         'Not together with <code>de</code>, which numbers the message\'s DEs; it is ignored and reported.',
       ]],
@@ -33286,6 +33296,9 @@ function _meResolveDEFieldList(item) {
 function _meFmMarkSubfields(rows, item) {
   const ids = new Set(rows.map(r => r.id));
   const nums = new Map();
+  // Overrides number subfields too ("62.3"); a spec entry with "field" wins
+  // its bit, and one without reads the field Overrides names.
+  const ovSub = _meOvSubfields(item), specHas = new Set();
   const resolve = (scope, f) => (scope && ids.has(`${scope}.${f}`)) ? `${scope}.${f}` : ids.has(f) ? f : null;
   const subBlocks = (blocks, scope, prefix) => {
     if (!Array.isArray(blocks)) return;
@@ -33298,7 +33311,8 @@ function _meFmMarkSubfields(rows, item) {
           const ent = Array.isArray(map[k]) ? { blocks: map[k] } : map[k];
           if (!ent || typeof ent !== 'object') continue;
           const label = `${prefix}.${k}`;
-          const id = ent.field != null ? resolve(scope, String(ent.field)) : null;
+          if (ent.field != null) specHas.add(label);
+          const id = ent.field != null ? resolve(scope, String(ent.field)) : (ovSub.get(label) || null);
           if (id && !nums.has(id)) nums.set(id, label);
           subBlocks(ent.blocks, id || scope, label);
         }
@@ -33327,6 +33341,8 @@ function _meFmMarkSubfields(rows, item) {
     }
   };
   deBlocks(item?.parse_spec_binary); deBlocks(item?.parse_spec_ascii);
+  for (const [label, id] of ovSub)
+    if (!specHas.has(label) && ids.has(id) && !nums.has(id)) nums.set(id, label);
   if (!nums.size) return;
   for (const r of rows) {
     if (nums.has(r.id)) { r.subNum = nums.get(r.id); continue; }
@@ -35078,17 +35094,21 @@ const _ME_FM_ED = {
                  def: () => { const o = _meFmSelOvr();
                               return o?.de === false ? 'exclude'
                                    : o?.de === 'children' ? 'children'
-                                   : _meDeIsAnchor(o?.de) ? 'number' : 'include'; },
+                                   : (_meDeIsAnchor(o?.de) || _meDeIsSub(o?.de)) ? 'number' : 'include'; },
                  opts: () => ['include', 'exclude', 'children', 'number'],
                  // Picking "number…" reveals the box next to the picker. It used
                  // to open a second editor on Apply, which asked for the number
                  // AFTER you had already committed — there was nowhere to type.
                  withNum: v => v === 'number',
-                 numDef:  () => _ME_FM_ED['de-anchor'].def(),
+                 // "43.1" numbers a subfield of DE 43, read by the spec's "subfields".
+                 numDef:  () => { const o = _meFmSelOvr();
+                                  return _meDeIsSub(o?.de) ? o.de : _ME_FM_ED['de-anchor'].def(); },
+                 numRe:   /^\d+(\.\d+)*$/,
                  set: (o, v) => {
                    // The number path IS de-anchor: same clamp, same meaning,
                    // stated once.
                    if (/^\d+$/.test(v))       { _ME_FM_ED['de-anchor'].set(o, v); return; }
+                   if (_meDeIsSub(v))         { o.de = v.trim(); delete o.de_src; return; }
                    // The other three are not numbers at all, so any provenance
                    // marker describes a number that no longer exists.
                    delete o.de_src;
@@ -35260,7 +35280,7 @@ function _meFmEdCommit() {
     }
     if (cfg.withNum && cfg.withNum(v)) {
       const nv = numEl.value.trim();
-      if (!/^[0-9]+$/.test(nv)) { numEl.focus(); return; }
+      if (!(cfg.numRe || /^[0-9]+$/).test(nv)) { numEl.focus(); return; }
       v = nv;   // the number IS the value from here on
     }
   }
@@ -35340,6 +35360,8 @@ function _meFmNotesRefresh() {
     if (o.de === 'children') notes.push(`${id}: not a data element; its immediate children each take one`);
     if (typeof o.de === 'number' || (typeof o.de === 'string' && /^\d+$/.test(o.de)))
       notes.push(`${id}: anchored at DE ${o.de} — every element after it renumbers from here`);
+    if (_meDeIsSub(o.de))
+      notes.push(`${id}: subfield ${o.de.trim()} — read when its DE's own bitmap sets that bit`);
     const _cnt = o.count === 'digits' ? ' counting hex digits' : ' counting bytes';
     if (o.vlg === true)      notes.push(`${id}: length source — the NEXT field is sized by its value,${_cnt}`);
     else if (o.vlg === false) notes.push(`${id}: NOT a length source — the automatic "-LEN" rule is suppressed here`);
@@ -40841,13 +40863,17 @@ function _meExecSubfieldBits(attrs, bmField, ctx) {
   const label  = n => parent != null ? `${parent}.${n}` : String(n);
   const bits   = Array.from(bmField.bitSet).sort((a, b) => a - b);
   const limit  = ctx._deLimit != null ? ctx._deLimit : ctx.bytes.length;
+  // Overrides can number a subfield ("62.3" on a field); the spec's entry for
+  // that bit wins, and an entry without "field" reads the field Overrides names.
+  const ovSub  = _meOvSubfields(_meOvMergedItem(ctx));
   _meStep(ctx, `walks ${bits.length} subfield(s) of ${bmField.id} in bit order: ${bits.map(label).join(', ')}`);
   for (const n of bits) {
     const mark = ctx.fields.length;
     try {
       const raw = map[String(n)];
-      if (raw == null) {
-        ctx.fields.push({ id: bmField.id, error: `Subfield ${label(n)} is set in ${bmField.id} but "subfields" has no entry for it — `
+      const ovId = ovSub.get(label(n));
+      if (raw == null && !ovId) {
+        ctx.fields.push({ id: bmField.id, error: `Subfield ${label(n)} is set in ${bmField.id} but neither "subfields" nor Overrides number it — `
           + `its length is unknown, so the rest of the element is not read` });
         break;
       }
@@ -40855,7 +40881,8 @@ function _meExecSubfieldBits(attrs, bmField, ctx) {
         ctx.fields.push({ id: bmField.id, error: `Subfield ${label(n)} is set in ${bmField.id}, but the element ended at byte ${limit}` });
         break;
       }
-      const ent = Array.isArray(raw) ? { blocks: raw } : (raw && typeof raw === 'object' ? raw : {});
+      const ent0 = Array.isArray(raw) ? { blocks: raw } : (raw && typeof raw === 'object' ? raw : {});
+      const ent = (ent0.field == null && ovId) ? { ...ent0, field: ovId } : ent0;
       const def = ent.field ? _meResolveScopedDef(ent.field, ctx) : null;
       if (ent.field && !def) {
         ctx.fields.push({ id: ent.field, error: `Subfield ${label(n)}: "${ent.field}" is not declared in the bound DDL` });

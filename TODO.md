@@ -1207,6 +1207,8 @@ explicit map over declaration order), the map read by `read-bitmap` with
 - ~~**Field Map** shows no subfield numbering~~ — done v1.69.1.5: the Overrides
   DE column shows `DE 62.3` from the spec's `subfields` map. If two specs map
   the same field, the binary spec's number wins.
+  v1.69.1.6: the number can also be SET there (Data element → number `62.3`);
+  the spec then needs only `"subfields": {}`, plus entries for blocks.
 
 
 ---

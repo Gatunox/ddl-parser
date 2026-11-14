@@ -801,6 +801,11 @@ the stated width is what keeps bit 1 as data — and `read-bitmap-fields` with
 
 - Every subfield is **mapped by hand**; nothing is taken from the DDL's order.
   An entry is `{field}`, `[blocks]`, or `{field, blocks}`.
+- **Overrides can number them instead**: Data element → number `62.3` on a field
+  inside DE 62 stores `de: "62.3"`. It moves no DE of the message. With the
+  numbers there, `"subfields": {}` is enough; an entry is written only to read
+  one with blocks, and without `field` it reads the field Overrides numbers. A
+  `field` in the spec wins its bit over Overrides.
 - `{field}` reads the element as declared: a leaf at its size, a group leaf by
   leaf — framed by its own LEN when it has one (a VLG flag, or a LEN leaf
   recognised by name), as the DE walk frames a group.
@@ -815,15 +820,15 @@ the stated width is what keeps bit 1 as data — and `read-bitmap-fields` with
   and the bitmap row takes that id.
 - Present subfields are read in bit order at the cursor; an absent one takes no
   room.
-- A set bit with no entry — a reserved one, say — is reported and **ends the
+- A set bit numbered nowhere — a reserved one, say — is reported and **ends the
   walk**: nothing says how long that subfield is, and reading on would misplace
   every later one. Where the DE then ends follows the table above.
 - Rows carry the subfield number (`deSub`, `"62.1"`) beside the DE's `deNum`,
   and Parse Results badges it `DE-62.1`, once, as it does a DE.
 - `de` is ignored beside `subfields`, and both the parse and the linter say so.
-- The Overrides DE column shows a mapped subfield's number (`DE 62.3`), taken
-  from the spec's `subfields` map, and the rows inside it show the same number
-  dimmed. Display only: the map lives in the spec, so it is edited there.
+- The Overrides DE column shows a subfield's number (`DE 62.3`) — from the
+  spec's `subfields` map or from Overrides, the spec winning — and the rows
+  inside it show the same number dimmed.
 - Generate does not write subfields yet; it reports them as not written.
 
 ### 5.15 `read-tlv` — BER framing and tag → element mapping

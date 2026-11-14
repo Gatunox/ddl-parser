@@ -202,6 +202,7 @@ _t.meOvOrder           = _meOvOrder;
 _t.meFmExpandTargets   = _meFmExpandTargets;
 _t.meFmDeCellHtml      = _meFmDeCellHtml;
 _t.meResolveDEFieldList = _meResolveDEFieldList;
+_t.meFmEd = _ME_FM_ED;
 _t.setFmVirt           = v => { _meFmVirt = v; };
 _t.meHtmlOverrides     = _meHtmlOverrides;
 _t.mePsLintWarns       = _mePsLintWarns;
@@ -336,7 +337,7 @@ const {
   meOvlChipParts, meOvKindsOf, meOvKinds, meOvSet, meFmSelWithKind,
   meSpecGaps,
   meResetLayout, meSectFor, meSectionToggle, meToggleListSect, meListSectSaved,
-  meFmExpandTargets, meFmDeCellHtml, meResolveDEFieldList, setFmVirt, mePsLintWarns, fmtDefaultSpecs, meItemBitmapIsSynthetic,
+  meFmExpandTargets, meFmDeCellHtml, meResolveDEFieldList, meFmEd, setFmVirt, mePsLintWarns, fmtDefaultSpecs, meItemBitmapIsSynthetic,
   meFmRowHtml, meState, setMeState,
   meExecParseSpec: _rawExecParseSpec, meParseFileWithSpec: _rawParseFileWithSpec,
   mePsKnownDDLIds, meFmCountUnresolved, meExtractCommentDEs,
@@ -13670,13 +13671,13 @@ test('"number…" reveals a box to type it in, while you are still choosing', ()
   const fn = psFnSource('_meFmEdCommit');
   assert.ok(/if \(cfg\.withNum && cfg\.withNum\(v\)\) \{[\s\S]{0,220}v = nv;/.test(fn),
     'the typed number is not what gets stored');
-  assert.ok(/if \(!\/\^\[0-9\]\+\$\/\.test\(nv\)\) \{ numEl\.focus\(\); return; \}/.test(fn),
+  assert.ok(/if \(!\(cfg\.numRe \|\| \/\^\[0-9\]\+\$\/\)\.test\(nv\)\) \{ numEl\.focus\(\); return; \}/.test(fn),
     'a blank or non-numeric DE number is stored anyway');
   // The number path IS de-anchor — one definition of what a DE number means.
   const ed = APP_SRC.slice(APP_SRC.indexOf("'de':"), APP_SRC.indexOf("'type':"));
   assert.ok(/_ME_FM_ED\['de-anchor'\]\.set\(o, v\)/.test(ed),
     'the picker restates the DE clamp instead of reusing de-anchor');
-  assert.ok(/numDef:  \(\) => _ME_FM_ED\['de-anchor'\]\.def\(\)/.test(ed),
+  assert.ok(/numDef:[\s\S]{0,160}: _ME_FM_ED\['de-anchor'\]\.def\(\)/.test(ed),
     'the box seeds from its own rule rather than de-anchor');
   // The panel is one row and stays on screen. Its width is NOT fixed at open
   // time — this box appears later — so the placement runs again when it does,
@@ -28805,7 +28806,7 @@ END
     const ctx = subRun({ '1': MAP['1'], '3': MAP['3'] }, [0xE0, 0, 0, 0, 0, 0, 0, 0], 'Y' + 'ABCD' + '01' + 'TAIL');
     const err = ctx.fields.find(f => f.error && /Subfield 2\.2/.test(f.error));
     assert.ok(err, 'an unmapped set bit was not reported');
-    assert.ok(/no entry/.test(err.error), err.error);
+    assert.ok(/neither "subfields" nor Overrides number it/.test(err.error), err.error);
     eq(row(ctx, 'F62.VALID'), undefined, 'the walk read on past a subfield of unknown length');
     // Reserved bits are the same case: bit 28 set, nothing maps it.
     const r = subRun(MAP, [0x80, 0, 0, 0x10, 0, 0, 0, 0], 'Y' + 'TAIL');
@@ -28978,6 +28979,92 @@ END
     assert.ok(/>DE 2\.3</.test(meFmDeCellHtml(r('F62.VALID'), ctx)), 'the cell does not draw DE 2.3');
     assert.ok(/me-fm-de-inh">DE 2\.3</.test(meFmDeCellHtml(r('F62.VALID.V-DATA'), ctx)), 'a leaf does not draw DE 2.3 dimmed');
     assert.ok(/>DE 2</.test(meFmDeCellHtml(r('F62.TRAN-ID'), ctx)), 'an unmapped subfield lost "DE 2"');
+  });
+
+  // Overrides can number a subfield ("2.3" on a field inside DE 2), so the spec
+  // only needs "subfields": {} — and an entry there needs no "field" to read it.
+  const ovRun = (subMap, overrides, subBits, body, ddl) => {
+    S.ddlTree = { V: { S: { D: ddl || SUB_DDL } } };
+    S.inputFormat = 'hex';
+    const b = [0x60, 0, 0, 0, 0, 0, 0, 0, ...subBits];
+    for (const c of body) b.push(c.charCodeAt(0));
+    return meExecParseSpec({ name: 'X', ddl_bindings: ['V/S/D/MSG'], overrides,
+      parse_spec_binary: [
+        { 'read-bitmap': { field: 'BITMAP', encoding: 'binary' } },
+        { 'read-bitmap-fields': { bitmap: 'BITMAP', de: { '2': [
+          { 'read-bitmap': { field: 'SF-BMP', length: 8, encoding: 'binary' } },
+          { 'read-bitmap-fields': { bitmap: 'SF-BMP', subfields: subMap } }] } } },
+      ] }, b);
+  };
+  const OV = { 'F62.AUTH-IND': { de: '2.1' }, 'F62.TRAN-ID': { de: '2.2' }, 'F62.VALID': { de: '2.3' } };
+
+  test('[REGRESSION] Overrides number subfields: "subfields": {} reads them', () => {
+    const ctx = ovRun({}, OV, [0xA0, 0, 0, 0, 0, 0, 0, 0], 'Y' + '01' + 'TAIL');
+    deepEq(ctx.fields.filter(f => f.error).map(f => f.error), [], 'the walk reported errors');
+    eq(row(ctx, 'F62.AUTH-IND')?.value, 'Y', 'subfield 2.1 from Overrides not read');
+    eq(row(ctx, 'F62.VALID')?.value, '01', 'subfield 2.3 from Overrides not read');
+    eq(row(ctx, 'F62.VALID').deSub, '2.3', 'the row does not carry its subfield number');
+    eq(row(ctx, 'TAIL')?.value, 'TAIL', 'the DE after the subfields starts at the wrong place');
+  });
+
+  test('[REGRESSION] a spec entry without "field" reads the field Overrides numbers', () => {
+    // Bit 3: VALID is LEN 9(2) + DATA X(9); the blocks read only what came.
+    const ddl = SUB_DDL.replace('    04 VALID PIC X(2).\n', '    04 VALID.\n      06 LEN PIC 9(2).\n      06 DATA PIC X(9).\n');
+    const ctx = ovRun({ '3': { blocks: [{ 'read-length-value':
+      { length_encoding: 'ascii', length_size: 2, as: 'F62.VALID.DATA' } }] } },
+      OV, [0xA0, 0, 0, 0, 0, 0, 0, 0], 'Y' + '03ABC' + 'TAIL', ddl);
+    deepEq(ctx.fields.filter(f => f.error).map(f => f.error), [], 'the walk reported errors');
+    eq(row(ctx, 'F62.VALID.DATA')?.value, 'ABC', 'the blocks did not read the Overrides field');
+    eq(row(ctx, 'TAIL')?.value, 'TAIL', 'the blocks read past what came');
+  });
+
+  test('[REGRESSION] the spec\'s "field" wins a bit Overrides also numbers', () => {
+    // Overrides say TRAN-ID is 2.3; the spec says VALID. VALID (2 bytes) is read.
+    const ctx = ovRun({ '3': { field: 'VALID' } }, { ...OV, 'F62.TRAN-ID': { de: '2.3' }, 'F62.VALID': {} },
+      [0x20, 0, 0, 0, 0, 0, 0, 0], '01' + 'TAIL');
+    eq(row(ctx, 'F62.VALID')?.value, '01', 'Overrides beat the spec');
+    eq(row(ctx, 'F62.TRAN-ID'), undefined, 'the Overrides field was read too');
+    const rows = meResolveDEFieldList({ name: 'X', ddl_bindings: ['V/S/D/MSG'],
+      overrides: { 'F62.TRAN-ID': { de: '2.3' } },
+      parse_spec_binary: [{ 'read-bitmap': { field: 'BITMAP', encoding: 'binary' } },
+        { 'read-bitmap-fields': { bitmap: 'BITMAP', de: { '2': [
+          { 'read-bitmap-fields': { bitmap: 'SF-BMP', subfields: { '3': { field: 'VALID' } } } }] } } }] });
+    const r = id => rows.find(x => x.id === id) || {};
+    eq(r('F62.VALID').subNum, '2.3', 'the column shows the losing number');
+    eq(r('F62.TRAN-ID').subNum, undefined, 'the column shows the losing number');
+  });
+
+  test('[REGRESSION] a subfield number in Overrides shows in the column and moves no DE', () => {
+    const rows = meResolveDEFieldList({ name: 'X', ddl_bindings: ['V/S/D/MSG'], overrides: OV,
+      parse_spec_binary: [{ 'read-bitmap': { field: 'BITMAP', encoding: 'binary' } },
+        { 'read-bitmap-fields': { bitmap: 'BITMAP', de: { '2': [
+          { 'read-bitmap-fields': { bitmap: 'SF-BMP', subfields: {} } }] } } }] });
+    const r = id => rows.find(x => x.id === id) || {};
+    eq(r('F62.AUTH-IND').subNum, '2.1', 'the column does not show 2.1');
+    eq(r('F62.VALID').subNum, '2.3', 'the column does not show 2.3');
+    eq(r('F62').de, 2, 'F62 lost its DE');
+    eq(r('TAIL').de, 3, 'a subfield number renumbered the message\'s DEs');
+    eq(r('F62.AUTH-IND').de, null, 'a subfield became a DE');
+    // A blocks-only entry reads the Overrides field, so short names inside its
+    // blocks resolve under it: VALID's own subfield 1 is 2.3.1.
+    S.ddlTree = { V: { S: { D: SUB_DDL.replace('    04 VALID PIC X(2).\n',
+      '    04 VALID.\n      06 V-BMP PIC X(1).\n      06 V-ONE PIC X(1).\n') } } };
+    const nested = meResolveDEFieldList({ name: 'X', ddl_bindings: ['V/S/D/MSG'], overrides: OV,
+      parse_spec_binary: [{ 'read-bitmap': { field: 'BITMAP', encoding: 'binary' } },
+        { 'read-bitmap-fields': { bitmap: 'BITMAP', de: { '2': [
+          { 'read-bitmap-fields': { bitmap: 'SF-BMP', subfields: { '3': { blocks: [
+            { 'read-bitmap-fields': { bitmap: 'V-BMP', subfields: { '1': { field: 'V-ONE' } } } }] } } } }] } } }] });
+    eq((nested.find(x => x.id === 'F62.VALID.V-ONE') || {}).subNum, '2.3.1', 'a subfield inside an Overrides subfield lost its scope');
+  });
+
+  test('[REGRESSION] the Data element picker takes 43.1', () => {
+    const cfg = meFmEd.de;
+    assert.ok(cfg.numRe.test('43.1') && cfg.numRe.test('43') && !cfg.numRe.test('43.') && !cfg.numRe.test('4x'),
+      'the box does not take a subfield number');
+    const o = {}; cfg.set(o, '43.1');
+    eq(o.de, '43.1', 'a subfield number is not stored as typed');
+    const o2 = {}; cfg.set(o2, '43');
+    eq(o2.de, 43, 'a plain number stopped anchoring');
   });
 }
 // ── Double-click a split bar: fit the pane to its content ───────────────────

@@ -201,6 +201,7 @@ _t.meOvSet             = _meOvSet;
 _t.meOvOrder           = _meOvOrder;
 _t.meFmExpandTargets   = _meFmExpandTargets;
 _t.meFmDeCellHtml      = _meFmDeCellHtml;
+_t.meResolveDEFieldList = _meResolveDEFieldList;
 _t.setFmVirt           = v => { _meFmVirt = v; };
 _t.meHtmlOverrides     = _meHtmlOverrides;
 _t.mePsLintWarns       = _mePsLintWarns;
@@ -335,7 +336,7 @@ const {
   meOvlChipParts, meOvKindsOf, meOvKinds, meOvSet, meFmSelWithKind,
   meSpecGaps,
   meResetLayout, meSectFor, meSectionToggle, meToggleListSect, meListSectSaved,
-  meFmExpandTargets, meFmDeCellHtml, setFmVirt, mePsLintWarns, fmtDefaultSpecs, meItemBitmapIsSynthetic,
+  meFmExpandTargets, meFmDeCellHtml, meResolveDEFieldList, setFmVirt, mePsLintWarns, fmtDefaultSpecs, meItemBitmapIsSynthetic,
   meFmRowHtml, meState, setMeState,
   meExecParseSpec: _rawExecParseSpec, meParseFileWithSpec: _rawParseFileWithSpec,
   mePsKnownDDLIds, meFmCountUnresolved, meExtractCommentDEs,
@@ -28950,6 +28951,33 @@ END
     assert.ok(/"NOPE" not found/.test(lintOf({ subfields: { '1': { field: 'NOPE' } } })), 'an unknown field went unreported');
     assert.ok(/"de" is ignored/.test(lintOf({ subfields: MAP, de: {} })), '"de" beside "subfields" went unreported');
     assert.ok(/must be an object/.test(lintOf({ subfields: [] })), 'a non-object map went unreported');
+  });
+
+  test('[REGRESSION] the Overrides DE column shows a subfield\'s number from the spec', () => {
+    // The number lives only in the spec's "subfields" map, so the column showed
+    // "DE 2" for every row of F62 and the map could not be read without a parse.
+    S.ddlTree = { V: { S: { D: SUB_DDL.replace('    04 VALID PIC X(2).\n',
+      '    04 VALID.\n      06 V-LEN PIC 9(2).\n      06 V-DATA PIC X(9).\n') } } };
+    const item = { name: 'X', ddl_bindings: ['V/S/D/MSG'], parse_spec_binary: [
+      { 'read-bitmap': { field: 'BITMAP', encoding: 'binary' } },
+      // Inside a when, outside and inside the entry, as a spec may put them.
+      { when: { then: [{ 'read-bitmap-fields': { bitmap: 'BITMAP', de: { '2': [
+        { 'read-bitmap': { field: 'SF-BMP', length: 8, encoding: 'binary' } },
+        { when: { then: [{ 'read-bitmap-fields': { bitmap: 'SF-BMP', subfields: {
+          '1': { field: 'AUTH-IND' }, '3': { field: 'VALID', blocks: [] } } } }] } }] } } }] } },
+    ] };
+    const rows = meResolveDEFieldList(item);
+    const r = id => rows.find(x => x.id === id) || {};
+    eq(r('F62').de, 2, 'F62 lost its DE');
+    eq(r('F62.AUTH-IND').subNum, '2.1', 'subfield 1 not numbered');
+    eq(r('F62.VALID').subNum, '2.3', 'subfield 3 not numbered');
+    eq(r('F62.TRAN-ID').subNum, undefined, 'an unmapped subfield was numbered');
+    eq(r('F62.VALID.V-LEN').subOf, '2.3', 'a leaf of subfield 3 does not say it belongs to it');
+    eq(r('TAIL').subNum, undefined, 'a later DE was numbered as a subfield');
+    const ctx = { ea: s => String(s), usesBitmapFields: true, foByField: new Map() };
+    assert.ok(/>DE 2\.3</.test(meFmDeCellHtml(r('F62.VALID'), ctx)), 'the cell does not draw DE 2.3');
+    assert.ok(/me-fm-de-inh">DE 2\.3</.test(meFmDeCellHtml(r('F62.VALID.V-DATA'), ctx)), 'a leaf does not draw DE 2.3 dimmed');
+    assert.ok(/>DE 2</.test(meFmDeCellHtml(r('F62.TRAN-ID'), ctx)), 'an unmapped subfield lost "DE 2"');
   });
 }
 // ── Double-click a split bar: fit the pane to its content ───────────────────

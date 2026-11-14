@@ -1204,7 +1204,9 @@ explicit map over declaration order), the map read by `read-bitmap` with
   hex, then a regression case from them.
 - **Generate** does not write subfields; `_genBitmapFields` reports them as not
   written.
-- **Field Map** shows no subfield numbering (the third open question above).
+- ~~**Field Map** shows no subfield numbering~~ — done v1.69.1.5: the Overrides
+  DE column shows `DE 62.3` from the spec's `subfields` map. If two specs map
+  the same field, the binary spec's number wins.
 
 
 ---

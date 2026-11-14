@@ -23697,7 +23697,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.69.1.4';
+const APP_VERSION  = '1.69.1.5';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -32478,6 +32478,14 @@ function _meFmDeCellHtml(row, ctx) {
   row._deSrc = _meAnchorSource(row, ctx);
   row._fromDDL = row._deSrc === 'auto';
   const sig = _meFmDeSig(row, ctx.usesBitmapFields, ctx.foByField.get(_canonFieldId(row.id))?.de);
+  // A subfield of a DE, numbered by that DE's own bitmap (the spec's
+  // "subfields" map). It says more than "Part of DE 62", so it comes first.
+  if (ctx.usesBitmapFields && row.subNum != null)
+    return `<td class="me-fm-de me-fm-de-sub" data-sig="${sig}s${ea(row.subNum)}"`
+         + ` title="${ea(`Subfield ${row.subNum} — bit ${row.subNum.slice(row.subNum.lastIndexOf('.') + 1)} of its DE's own bitmap reads it, as the parse spec's "subfields" map says.`)}">DE ${ea(row.subNum)}</td>`;
+  if (ctx.usesBitmapFields && row.subOf != null)
+    return `<td class="me-fm-de me-fm-de-owned" data-sig="${sig}u${ea(row.subOf)}"`
+         + ` title="${ea(`Part of subfield ${row.subOf}, owned by ${row.subOfId}.`)}"><span class="me-fm-de-inh">DE ${ea(row.subOf)}</span></td>`;
   // A row inside a terminal group owns no DE, but it still BELONGS to one — and
   // that is the only thing worth saying about it. The early return skipped the
   // whole block, so the number was computed and then never drawn.
@@ -33265,7 +33273,69 @@ function _meResolveDEFieldList(item) {
   const resolved = bindings.map(p => (typeof getDDLFromPath === 'function') ? getDDLFromPath(p) : null);
   const defs = _meCollectBindingDefs(resolved);
   if (!defs.length) return [];
-  return _meWalkDEFields(defs, item);
+  const rows = _meWalkDEFields(defs, item);
+  _meFmMarkSubfields(rows, item);
+  return rows;
+}
+
+// Subfield numbers for the DE column (TODO 26). They live in the parse spec —
+// a `subfields` map inside a DE's entry — not in the DDL or the overrides, so
+// the walk above cannot know them. A mapped field gets `subNum` ("62.3"); the
+// rows inside it get `subOf`, the way a DE's leaves get ownerDE. Display only:
+// the engine reads the spec itself. Binary spec first, as _meItemBitmapField.
+function _meFmMarkSubfields(rows, item) {
+  const ids = new Set(rows.map(r => r.id));
+  const nums = new Map();
+  const resolve = (scope, f) => (scope && ids.has(`${scope}.${f}`)) ? `${scope}.${f}` : ids.has(f) ? f : null;
+  const subBlocks = (blocks, scope, prefix) => {
+    if (!Array.isArray(blocks)) return;
+    for (const b of blocks) {
+      if (!b || typeof b !== 'object') continue;
+      const a = b['read-bitmap-fields'];
+      const map = a && typeof a === 'object' ? a.subfields : null;
+      if (map && typeof map === 'object' && !Array.isArray(map)) {
+        for (const k of Object.keys(map)) {
+          const ent = Array.isArray(map[k]) ? { blocks: map[k] } : map[k];
+          if (!ent || typeof ent !== 'object') continue;
+          const label = `${prefix}.${k}`;
+          const id = ent.field != null ? resolve(scope, String(ent.field)) : null;
+          if (id && !nums.has(id)) nums.set(id, label);
+          subBlocks(ent.blocks, id || scope, label);
+        }
+      }
+      subBlocks(b.when?.then, scope, prefix);
+      subBlocks(b.repeat?.body, scope, prefix);
+      subBlocks(b['read-while']?.body, scope, prefix);
+    }
+  };
+  const deBlocks = blocks => {
+    if (!Array.isArray(blocks)) return;
+    for (const b of blocks) {
+      if (!b || typeof b !== 'object') continue;
+      const a = b['read-bitmap-fields'];
+      const de = a && typeof a === 'object' && a.subfields === undefined ? a.de : null;
+      if (de && typeof de === 'object') {
+        for (const k of Object.keys(de)) {
+          const ent = Array.isArray(de[k]) ? { blocks: de[k] } : de[k];
+          if (!ent || typeof ent !== 'object') continue;
+          const own = ent.field != null ? resolve(null, String(ent.field))
+                    : (rows.find(r => r.de === Number(k)) || {}).id || null;
+          subBlocks(ent.blocks, own, k);
+        }
+      }
+      deBlocks(b.when?.then); deBlocks(b.repeat?.body); deBlocks(b['read-while']?.body);
+    }
+  };
+  deBlocks(item?.parse_spec_binary); deBlocks(item?.parse_spec_ascii);
+  if (!nums.size) return;
+  for (const r of rows) {
+    if (nums.has(r.id)) { r.subNum = nums.get(r.id); continue; }
+    // The nearest mapped ancestor: a subfield inside a subfield is its own.
+    for (let p = r.id.lastIndexOf('.'); p > 0; p = r.id.lastIndexOf('.', p - 1)) {
+      const up = r.id.slice(0, p);
+      if (nums.has(up)) { r.subOf = nums.get(up); r.subOfId = up; break; }
+    }
+  }
 }
 
 // ── Shared DE walker ─────────────────────────────────────────────────────────

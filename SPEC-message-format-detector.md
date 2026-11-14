@@ -821,6 +821,9 @@ the stated width is what keeps bit 1 as data — and `read-bitmap-fields` with
 - Rows carry the subfield number (`deSub`, `"62.1"`) beside the DE's `deNum`,
   and Parse Results badges it `DE-62.1`, once, as it does a DE.
 - `de` is ignored beside `subfields`, and both the parse and the linter say so.
+- The Overrides DE column shows a mapped subfield's number (`DE 62.3`), taken
+  from the spec's `subfields` map, and the rows inside it show the same number
+  dimmed. Display only: the map lives in the spec, so it is edited there.
 - Generate does not write subfields yet; it reports them as not written.
 
 ### 5.15 `read-tlv` — BER framing and tag → element mapping

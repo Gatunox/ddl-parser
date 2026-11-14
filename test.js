@@ -26183,22 +26183,62 @@ console.log('\ngenerate a message');
       return JSON.stringify({ out: g.out, written: g.written, problems: g.problems, v }); })()`));
   };
 
-  test('[REGRESSION] generate: "subfields" says it is not written yet instead of walking them as DEs', () => withTree(() => {
-    const it = iso('ascii', 'binary');
-    it.parse_spec_binary[2] = { 'read-bitmap-fields': { bitmap: 'PBIT-MAP', de: { '2': [
-      { 'read-bitmap': { field: 'SF-BMP', length: 8, encoding: 'binary' } },
-      { 'read-bitmap-fields': { bitmap: 'SF-BMP', subfields: { '1': { field: 'PAN' } } } }] } } };
-    const r = gen(it, { des: [2, 3] });
-    assert.ok(r.problems.some(p => /subfields are not generated yet/.test(p)), JSON.stringify(r.problems));
+  // A DE with a bitmap of its own (Visa DE 62): Generate writes the subfields the
+  // parse reads — numbered in Overrides or in the spec — and sets their bits.
+  const SUB_GEN_DDL = 'DEFINITION SUBMSG.\n  02 TYP PIC X(4).\n  02 PBIT-MAP PIC X(8).\n  02 PAD PIC X(1).\n'
+    + '  02 F62.\n    04 SF-BMP PIC X(8).\n    04 AUTH-IND PIC X(1).\n    04 TRAN-ID PIC X(4).\n'
+    + '    04 VALID.\n      06 LEN PIC 9(2).\n      06 DATA PIC X(9).\n  02 DE-3 PIC 9(6).\nEND\n';
+  const withSub = fn => {
+    const saved = run('({ t: S.ddlTree })');
+    sandbox.__sub = SUB_GEN_DDL;
+    run('S.ddlTree = { BASE: { DDL: { SUB: __sub } } }; _ddlTreeVersion++;');
+    try { return fn(); } finally { sandbox.__saved = saved; run('S.ddlTree = __saved.t; _ddlTreeVersion++;'); }
+  };
+  const subItem = (rbf, sfEnc = 'binary', sfLen = 8) => ({ name: 'SUB', label: 'SUB', ddl_bindings: ['BASE/DDL/SUB/SUBMSG'],
+    overrides: { 'F62.AUTH-IND': { de: '2.1' } },
+    recognizers: [{ type: 'mti', offset: 0, value: '0200', encoding: 'ascii' }],
+    parse_spec_binary: [{ read: 'TYP' }, { 'read-bitmap': { field: 'PBIT-MAP', encoding: 'binary' } },
+      { 'read-bitmap-fields': { bitmap: 'PBIT-MAP', de: { '2': [
+        { 'read-bitmap': { field: 'SF-BMP', length: sfLen, encoding: sfEnc } },
+        { 'read-bitmap-fields': rbf }] } } }] });
+  const clean = r => [...r.problems, ...r.v.errors, ...r.v.diffs];
+
+  test('[REGRESSION] generate: a DE\'s own bitmap and its subfields, numbered in Overrides, round-trip', () => withSub(() => {
+    // 2.1 anchors AUTH-IND; TRAN-ID is 2.2, VALID 2.3 — a group framed by its LEN.
+    const r = gen(subItem({ bitmap: 'SF-BMP' }), { des: [2, 3], values: { 'F62.VALID.DATA': 'ABC' } });
+    deepEq(clean(r), [], 'the message did not round-trip');
+    eq(r.out.slice(12, 20).map(b => b.toString(16).padStart(2, '0')).join(''), 'e000000000000000', 'the DE\'s bitmap does not mark 2.1, 2.2 and 2.3');
+    eq(r.written['F62.VALID.DATA'], 'ABC', 'the subfield group was not written');
+    eq(r.written['F62.VALID.LEN'], '03', 'the subfield group\'s LEN does not frame what was written');
   }));
 
-  test('[REGRESSION] generate: a bitmap walk inside a DE entry is its subfields even without "subfields"', () => withTree(() => {
-    const it = iso('ascii', 'binary');
-    it.parse_spec_binary[2] = { 'read-bitmap-fields': { bitmap: 'PBIT-MAP', de: { '2': [
-      { 'read-bitmap': { field: 'SF-BMP', length: 8, encoding: 'binary' } },
-      { 'read-bitmap-fields': 'SF-BMP' }] } } };
-    const r = gen(it, { des: [2, 3] });
-    assert.ok(r.problems.some(p => /subfields are not generated yet/.test(p)), JSON.stringify(r.problems));
+  test('[REGRESSION] generate: only the subfields picked are written, and their bits alone are set', () => withSub(() => {
+    const r = gen(subItem({ bitmap: 'SF-BMP' }), { des: [2, 3], subs: ['2.1', '2.3'] });
+    deepEq(clean(r), [], 'the message did not round-trip');
+    eq(r.out[12], 0xA0, 'the bits are not 2.1 and 2.3');
+    eq(r.written['F62.TRAN-ID'], undefined, 'a subfield not picked was written');
+    const none = gen(subItem({ bitmap: 'SF-BMP' }), { des: [2, 3], subs: [] });
+    deepEq(clean(none), [], 'a DE with no subfield picked did not round-trip');
+    eq(none.out[12], 0, 'a bit is set with no subfield written');
+    const bad = gen(subItem({ bitmap: 'SF-BMP' }), { des: [2, 3], subs: ['2.9'] });
+    assert.ok(bad.problems.some(p => /Subfield 2\.9: nothing numbers it/.test(p)), JSON.stringify(bad.problems));
+  }));
+
+  test('[REGRESSION] generate: the dialog\'s model lists each subfield of a DE with its rows', () => withSub(() => {
+    sandbox.__item = subItem({ bitmap: 'SF-BMP' });
+    const m = JSON.parse(run('JSON.stringify(_genModel(__item, {}, false).des[2])'));
+    deepEq(Object.keys(m.subs || {}), ['2.1', '2.2', '2.3'], 'the subfields are not listed');
+    deepEq(m.leaves.map(f => f.id), [], 'the DE shows subfield rows before any is picked');
+    deepEq(m.subs['2.3'].leaves.map(f => f.id), ['F62.VALID.DATA'], 'a subfield does not bring its rows (its LEN is computed)');
+    eq(m.subs['2.1'].name, 'F62.AUTH-IND', 'a subfield is not named by its field');
+  }));
+
+  test('[REGRESSION] generate: a subfield read by blocks is written by them; a hex DE bitmap', () => withSub(() => {
+    const rbf = { bitmap: 'SF-BMP', subfields: { '3': { blocks: [
+      { 'read-length-value': { length_encoding: 'ascii', length_size: 2, as: 'F62.VALID.DATA' } }] } } };
+    const r = gen(subItem(rbf, 'hex', 16), { des: [2, 3], subs: ['2.1', '2.3'], values: { 'F62.VALID.DATA': 'XYZ' } });
+    deepEq(clean(r), [], 'the message did not round-trip');
+    eq(String.fromCharCode(...r.out.slice(12, 28)), 'A000000000000000', 'the hex bitmap does not mark 2.1 and 2.3');
   }));
 
   test('generate: an ISO message round-trips in ASCII and EBCDIC, binary and hex bitmap, secondary included', () => withTree(() => {
@@ -26626,16 +26666,44 @@ console.log('\ngenerate a message');
     const ids = ['genFind', 'genFindList', 'genRows'];
     try {
       elStubs.genFind = { value: '4' }; elStubs.genFindList = { innerHTML: '' }; elStubs.genRows = { innerHTML: '' };
-      run(`_genSt = { key: 'X', des: [], rows: {}, model: { head: [], bitmap: true, des: Object.fromEntries([14, 4, 40, 114].map(n => [n, { name: 'DATA-' + n, leaves: [{ id: 'F' + n, dflt: '' }] }])) } }`);
-      deepEq(run('_genMatches()'), [4, 14, 40, 114], 'the DE numbered 4 is not first');
+      run(`_genSt = { key: 'X', des: [], subs: [], rows: {}, model: { head: [], bitmap: true, des: Object.fromEntries([14, 4, 40, 114].map(n => [n, { name: 'DATA-' + n, leaves: [{ id: 'F' + n, dflt: '' }] }])) } }`);
+      deepEq(run('_genMatches()'), ['4', '14', '40', '114'], 'the DE numbered 4 is not first');
       // A field named by number is found by what it is: its description.
       run(`_genSt.model.des[14].leaves[0].desc = 'Primary Account Number (PAN)'`);
       elStubs.genFind.value = 'pan';
-      deepEq(run('_genMatches()'), [14], 'a DE is not found by its description');
+      deepEq(run('_genMatches()'), ['14'], 'a DE is not found by its description');
       elStubs.genFind.value = '4';
       run('genAddFirst()');
       deepEq(run('_genSt.des'), [4], 'Enter did not add DE 4');
       eq(elStubs.genFind.value, '', 'the finder kept what was typed, so the next number is appended to it');
+    } finally { for (const id of ids) delete elStubs[id]; run('_genSt = null'); }
+  });
+
+  test('[REGRESSION] generate: Generate writes the subfields picked, and keeps them for the class', () => {
+    const fn = psFnSource('genRun');
+    assert.ok(/_genMessage\(item, \{[^}]*subs: _genSt\.subs\.slice\(\)/.test(fn), 'the subfields picked are not passed to the writer');
+    assert.ok(/_genChoice\[_genSt\.key\] = \{[^}]*subs: _genSt\.subs\.slice\(\)/.test(fn), 'the subfields picked are not kept');
+    assert.ok(/subs: \(c\.subs \|\| \[\]\)\.slice\(\)/.test(psFnSource('openGenerate')), 'the kept subfields are not restored');
+  });
+
+  test('[REGRESSION] generate: the finder offers a DE\'s subfields; one brings its DE, the DE takes them out', () => {
+    const run = c => vm.runInContext(c, sandbox);
+    const ids = ['genFind', 'genFindList', 'genRows'];
+    try {
+      elStubs.genFind = { value: '62' }; elStubs.genFindList = { innerHTML: '' }; elStubs.genRows = { innerHTML: '' };
+      run(`_genSt = { key: 'X', des: [], subs: [], rows: {}, model: { head: [], bitmap: true, des: {
+        62: { name: 'F62', leaves: [], subs: { '62.10': { name: 'J', leaves: [{ id: 'F62.J', dflt: 'j' }] },
+                                               '62.1':  { name: 'A', leaves: [{ id: 'F62.A', dflt: 'a' }] },
+                                               '62.2':  { name: 'B', leaves: [{ id: 'F62.B', dflt: 'b' }] } } },
+        63: { name: 'F63', leaves: [{ id: 'F63', dflt: '' }] } } } }`);
+      deepEq(run('_genMatches()'), ['62', '62.1', '62.2', '62.10'], 'the subfields are not offered in number order after their DE');
+      run(`genAddDe('62.10')`); run(`genAddDe('62.1')`);
+      deepEq(run('_genSt.des'), [62], 'a subfield did not bring its DE');
+      deepEq(run('_genVisible().map(r => r.de + ":" + r.f.id)'), ['62.1:F62.A', '62.10:F62.J'], 'the subfield rows are not shown in bit order');
+      run(`genDelDe('62.1')`);
+      deepEq(run('_genSt.subs'), ['62.10'], 'leaving a subfield out took more than it');
+      run(`genDelDe('62')`);
+      deepEq([run('_genSt.des'), run('_genSt.subs')], [[], []], 'leaving the DE out kept its subfields');
     } finally { for (const id of ids) delete elStubs[id]; run('_genSt = null'); }
   });
 

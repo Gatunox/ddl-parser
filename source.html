@@ -23739,7 +23739,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.69.2.0';
+const APP_VERSION  = '1.69.3.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -43339,7 +43339,7 @@ function _genOnce(item, o, flips) {
   const g = {
     item, resolvedBindings: (item.ddl_bindings || []).map(p => p ? getDDLFromPath(p) : null),
     fields: [], fieldsById: {}, out: [], cursor: 0, written: {}, hexOf: {},
-    values: o.values || {}, des: o.des || null, bitmaps: {}, problems: [],
+    values: o.values || {}, des: o.des || null, subs: o.subs || null, subSeen: [], bitmaps: {}, problems: [],
     enc: o.enc || _meSpecEncodingInfo(item).enc, stopped: false, lenIds: new Set(), notes: [], spans: {},
     depth: o.depth || 0, maps: {}, raw: { ...(o.raw || {}) }, tokenArea: o.tokenArea || null, tokWritten: [], unshown: {}, checks: [],
     flips, guardSeq: 0, guardMiss: null,
@@ -43906,6 +43906,20 @@ function _genBitmap(attrs, g) {
     return;
   }
   if (attrs?.field && attrs.length === undefined && g.segSpec) return _genSegMapFromFile(attrs, g);
+  // A DE's own bitmap (Visa DE 62): its bits are the subfields the
+  // read-bitmap-fields after it writes, so it is written blank here and set
+  // there. `length` is in bytes of the message, hex digits included.
+  if (attrs?.field && attrs.length !== undefined && g.inDe) {
+    const L = attrs.length;
+    if (!Number.isInteger(L) || L <= 0) { g.problems.push(`read-bitmap ${attrs.field}: "length" must be a whole number of bytes above 0 — skipped`); return; }
+    const isHex = attrs.encoding === 'hex' || attrs.encoding === 'ascii-hex';
+    const id = g._deScope && _meFindDefById(`${g._deScope}.${attrs.field}`, g) ? `${g._deScope}.${attrs.field}` : attrs.field;
+    const at = g.cursor;
+    _genPut(g, at, isHex ? _genText('0'.repeat(L), g.enc) : new Array(L).fill(0));
+    g.spans[id] = [at, L];
+    g.bitmaps[attrs.field] = { sub: true, at, L, isHex, bits: (isHex ? L >> 1 : L) * 8 };
+    return;
+  }
   if (!attrs?.field || attrs.length !== undefined) {
     g.problems.push('read-bitmap: only an ISO bitmap read from the message is generated yet — skipped'); return;
   }
@@ -43925,11 +43939,8 @@ function _genBitmap(attrs, g) {
 }
 function _genBitmapFields(attrs, g) {
   const id = typeof attrs === 'string' ? attrs : attrs?.bitmap;
-  // Not written yet (TODO 26): those bits are one DE's subfields, and walking
-  // them as the message's DEs would write the wrong elements.
-  if ((attrs && typeof attrs === 'object' && attrs.subfields !== undefined) || g.inDe) {
-    g.problems.push(`read-bitmap-fields "subfields" (${id}): subfields are not generated yet — nothing written for them`); return;
-  }
+  // Inside a DE's entry the bits are that DE's subfields, as the parse reads them.
+  if ((attrs && typeof attrs === 'object' && attrs.subfields !== undefined) || g.inDe) return _genSubfieldBits(attrs, id, g);
   const des = g.bitmaps[id];
   if (!des) { g.problems.push(`read-bitmap-fields: no bitmap "${id}" was written before it — skipped`); return; }
   const deMap = _genDeMap(g);
@@ -43947,6 +43958,53 @@ function _genBitmapFields(attrs, g) {
     const li = Math.max(0, e.kids.findIndex(k => k.id === lenId));
     _genFramed(e.kids.slice(0, li), e.kids[li], e.kids.slice(li + 1), g);
   }
+}
+// A DE's subfields: those numbered in the spec's "subfields" or in Overrides
+// ("62.3"), as the parse numbers them — `g.subs` picks which ("62.1", …; null
+// writes them all). Each is written as the parse reads it: by its blocks, or as
+// its field is declared, a group framed by its own LEN. Then the DE's own bitmap,
+// written blank before them, gets their bits.
+function _genSubfieldBits(attrs, id, g) {
+  const bm = g.bitmaps[id];
+  if (!bm || !bm.sub) { g.problems.push(`read-bitmap-fields ${id}: the DE's own bitmap — read-bitmap with "length" — was not written before it; subfields skipped`); return; }
+  const sf = attrs && typeof attrs === 'object' ? attrs.subfields : undefined;
+  const map = sf && typeof sf === 'object' && !Array.isArray(sf) ? sf : {};
+  const parent = g._deBit;
+  const label = n => parent != null ? `${parent}.${n}` : String(n);
+  const ov = _meOvSubfields(_meOvMergedItem(g), _genDefs(g).map(d => ({ id: d.id, redef: !!d.isRedefines })));
+  const bits = new Set(Object.keys(map).filter(k => /^\d+$/.test(k)).map(Number));
+  const pre = parent != null ? `${parent}.` : '';
+  for (const k of ov.keys()) if (k.startsWith(pre) && /^\d+$/.test(k.slice(pre.length))) bits.add(+k.slice(pre.length));
+  const all = [...bits].filter(n => n >= 1 && n <= bm.bits).sort((x, y) => x - y);
+  g.subSeen.push(...all.map(label));
+  if (g.subs) for (const s of g.subs) if (s.startsWith(pre) && !all.some(n => label(n) === s))
+    g.problems.push(`Subfield ${s}: nothing numbers it — left out`);
+  const varGroups = _meVlgLenMap(_meOvMergedItem(g));
+  const set = [];
+  for (const n of all.filter(n => !g.subs || g.subs.includes(label(n)))) {
+    const raw = map[String(n)];
+    const ent0 = Array.isArray(raw) ? { blocks: raw } : (raw && typeof raw === 'object' ? raw : {});
+    const ent = (ent0.field == null && ov.get(label(n))) ? { ...ent0, field: ov.get(label(n)) } : ent0;
+    const def = ent.field ? _meResolveScopedDef(ent.field, g) : null;
+    if (ent.field && !def) { g.problems.push(`Subfield ${label(n)}: "${ent.field}" is not declared in the bound DDL — left out`); continue; }
+    if (Array.isArray(ent.blocks) && ent.blocks.length) {
+      // The blocks decide, as in the parse: no LEN of the engine's own first.
+      const prev = g._deScope, prevBit = g._deBit;
+      g._deScope = def ? def.id : prev; g._deBit = label(n); g.inDe = (g.inDe || 0) + 1;
+      try { _genBlocks(ent.blocks, g); } finally { g._deScope = prev; g._deBit = prevBit; g.inDe--; }
+    } else if (!def) { g.problems.push(`Subfield ${label(n)}: its entry needs a "field" or "blocks" — left out`); continue; }
+    else if (def.isGroup) {
+      const kids = _meGroupLeaves(def.id, g), lenId = _genGroupLenId({ groupId: def.id, kids }, varGroups);
+      if (!lenId) for (const k of kids) _genField(k, g.cursor, g);
+      else { const li = Math.max(0, kids.findIndex(k => k.id === lenId)); _genFramed(kids.slice(0, li), kids[li], kids.slice(li + 1), g); }
+    } else _genField(_meFindDefById(def.id, g) || def, g.cursor, g);
+    set.push(n);
+  }
+  const map8 = new Array(bm.bits >> 3).fill(0);
+  for (const n of set) map8[(n - 1) >> 3] |= 0x80 >> ((n - 1) & 7);
+  const end = g.cursor;
+  _genPut(g, bm.at, bm.isHex ? _genText(map8.map(x => x.toString(16).padStart(2, '0')).join('').toUpperCase(), g.enc) : map8);
+  g.cursor = end;
 }
 // A "de" entry: its blocks write the DE, in the frame the parse reads it by — a length prefix, the group's own length
 // leaf, or a stated length — each set to what the blocks wrote.
@@ -43971,9 +44029,9 @@ function _genDeEntry(de, e, ovr, g) {
   const at = g.cursor;
   if (frame) _genPut(g, at, new Array(frame.w).fill(0));
   // _deScope, as the parse names it: a TLV inside resolves its groups there first.
-  const start = g.cursor, prev = g._deScope;
-  g._deScope = scope; g.inDe = (g.inDe || 0) + 1;
-  try { _genBlocks(blocks, g); } finally { g._deScope = prev; g.inDe--; }
+  const start = g.cursor, prev = g._deScope, prevBit = g._deBit;
+  g._deScope = scope; g._deBit = de; g.inDe = (g.inDe || 0) + 1;
+  try { _genBlocks(blocks, g); } finally { g._deScope = prev; g._deBit = prevBit; g.inDe--; }
   const n = g.cursor - start;
   if (frame) {
     const N = frame.digits ? n * 2 : n, b = _genLenBytes(N, frame.type, frame.w, g.enc);
@@ -44459,9 +44517,20 @@ function _genModel(item, values, ascii) {
       des[n] = { name: e.def ? e.def.id : e.groupId, leaves: leaves.map(d => _genLeaf(d, g0)) };
       // A DE a "de" entry writes: its rows are what those blocks write.
       if (entries.has(n)) {
-        const gn = _genMessage(item, { des: [n], values: values || {}, format: fmt });
-        des[n].leaves = Object.keys(gn.written).filter(id => !(id in g0.written) && !gn.lenIds.has(id)).map(id => defs.has(id)
-          ? _genLeaf(defs.get(id), gn, gn.written[id]) : { id, len: String(gn.written[id]).length, kind: 'text', pic: '', dflt: gn.written[id] });
+        const leavesOf = (g, base) => Object.keys(g.written).filter(id => !(id in base) && !g.lenIds.has(id)).map(id => defs.has(id)
+          ? _genLeaf(defs.get(id), g, g.written[id]) : { id, len: String(g.written[id]).length, kind: 'text', pic: '', dflt: g.written[id] });
+        // No subfield picked: the DE's own rows. Each subfield its bitmap
+        // numbers is picked like a DE, and brings its rows.
+        const gn = _genMessage(item, { des: [n], subs: [], values: values || {}, format: fmt });
+        des[n].leaves = leavesOf(gn, g0.written);
+        if (gn.subSeen.length) {
+          des[n].subs = {};
+          for (const lb of gn.subSeen) {
+            const gs = _genMessage(item, { des: [n], subs: [lb], values: values || {}, format: fmt });
+            const leaves = leavesOf(gs, gn.written);
+            des[n].subs[lb] = { name: leaves.length === 1 ? leaves[0].id : (_meOvSubfields(item, _genDefs(gs).map(d => ({ id: d.id, redef: !!d.isRedefines }))).get(lb) || lb), leaves };
+          }
+        }
       }
       // An ISO class carries its tokens in DE 63 or 126: the field that holds
       // the DE's bytes can take the Token buffer.
@@ -44557,7 +44626,7 @@ function openGenerate() {
   const kept = (P.genTokens || {})[key] || {};
   const rows0 = JSON.parse(JSON.stringify(c.rows || {}));
   _genSt = { key, rows: rows0, deciders: _genDeciders(item) };
-  _genSt = { ..._genSt, model: _genModel(item, _genProbeValues(), c.fmt === 'ascii'), des: (c.des || []).slice(), rows: rows0, fmt: c.fmt || 'hex',
+  _genSt = { ..._genSt, model: _genModel(item, _genProbeValues(), c.fmt === 'ascii'), des: (c.des || []).slice(), subs: (c.subs || []).slice(), rows: rows0, fmt: c.fmt || 'hex',
     place: _genTokenPlace(item), toks: (kept.list || []).filter(t => t && t.id).map(t => ({ id: t.id, values: { ...(t.values || {}) }, ...(t.raw != null ? { raw: t.raw } : {}) })),
     tokModel: {}, tokOpen: true, fldOpen: true, tokDraft: null };
   const binds = (item.ddl_bindings || []).filter(Boolean);
@@ -44577,8 +44646,8 @@ function openGenerate() {
     // The fields fold like the Token buffer; folded, they stay in the page — hidden, not dropped.
     + `<div class="me-section gen-tok" id="genFlds"><div class="me-section-hdr" onclick="genFldToggle()"><span>Fields</span>${_cpIco('genFlds')}`
     + `<span class="pt-badge" id="genFldCount"></span><span class="me-section-arr" id="genFldArr">−</span></div><div id="genFldBody">`
-    + (_genSt.model.bitmap ? `<div class="gen-row"><label>Add a DE — by number or name</label>
-        <input class="me-inp" id="genFind" placeholder="e.g. 4, or PAN" oninput="genFind()" onkeydown="if(event.key==='Enter'){event.preventDefault();genAddFirst();}">
+    + (_genSt.model.bitmap ? `<div class="gen-row"><label>Add a DE or a subfield — by number or name</label>
+        <input class="me-inp" id="genFind" placeholder="e.g. 4, 62.3, or PAN" oninput="genFind()" onkeydown="if(event.key==='Enter'){event.preventDefault();genAddFirst();}">
         <div class="gen-find" id="genFindList"></div></div>` : '')
     + `<table class="exp-tbl gen-tbl"><thead><tr><th>DE</th><th>Field</th><th>Type</th><th>Value from</th><th>Value</th><th></th></tr></thead><tbody id="genRows"></tbody></table></div></div>`
     + (_genSt.place ? `<div class="me-section gen-tok" id="genTok"></div>` : '');
@@ -44600,7 +44669,10 @@ function _genKeep() {
 function _genVisible() {
   const m = _genSt.model;
   return m.head.map(f => ({ de: null, f })).concat(_genSt.des.filter(n => m.des[n]).sort((x, y) => x - y)
-    .flatMap(n => m.des[n].leaves.map(f => ({ de: n, f }))));
+    .flatMap(n => m.des[n].leaves.map(f => ({ de: n, f }))
+      // The subfields picked for it, in bit order, under their own number.
+      .concat(_genSt.subs.filter(lb => m.des[n].subs?.[lb]).sort(_genKeyCmp)
+        .flatMap(lb => m.des[n].subs[lb].leaves.map(f => ({ de: lb, f }))))));
 }
 const _genEsc = f => esc(f.id);
 function _genCell(f) {
@@ -44634,7 +44706,7 @@ function _genRowHtml({ de, f }) {
     + `<td class="gen-de">${esc(f.pic)}</td>`
     + `<td><select class="me-sel gen-mode" data-mode-id="${id(f)}" onchange="genMode(this)">${_genModes(f).map(([v, l]) => `<option value="${v}"${v === mode ? ' selected' : ''}>${l}</option>`).join('')}</select></td>`
     + `<td>${_genCell(f)}</td>`
-    + `<td>${de == null ? '' : `<button class="btn btn-ico" onclick="genDelDe(${de})" title="Leave DE ${de} out">✕</button>`}</td></tr>`;
+    + `<td>${de == null ? '' : `<button class="btn btn-ico" onclick="genDelDe('${de}')" title="Leave DE ${de} out">✕</button>`}</td></tr>`;
 }
 function _genRows() {
   const rows = _genVisible();
@@ -44687,35 +44759,59 @@ function genMode(sel) {
   _genRows(); _genTokRender();
   genRowChange(sel);
 }
-// The DEs not added yet that match what is typed: the number, or the name.
+// "62" before "62.1" before "62.10" before "63".
+function _genKeyCmp(a, b) {
+  const x = String(a).split('.').map(Number), y = String(b).split('.').map(Number);
+  for (let i = 0; i < Math.max(x.length, y.length); i++) {
+    if (x[i] === undefined) return -1;
+    if (y[i] === undefined) return 1;
+    if (x[i] !== y[i]) return x[i] - y[i];
+  }
+  return 0;
+}
+// The DEs and subfields ("62.3") not added yet that match what is typed: the
+// number, or the name. Keys are strings.
 function _genMatches() {
   const q = String(document.getElementById('genFind')?.value || '').trim().toUpperCase();
-  // The DE with exactly that number first, then the names that contain it.
-  return Object.keys(_genSt.model.des).map(Number).filter(n => !_genSt.des.includes(n)
-    && (!q || String(n) === q || _genSt.model.des[n].name.toUpperCase().includes(q)
-        || _genSt.model.des[n].leaves.some(f => f.id.toUpperCase().includes(q) || String(f.desc || '').toUpperCase().includes(q))))
-    .sort((x, y) => (String(y) === q) - (String(x) === q) || x - y);
+  const m = _genSt.model.des, out = [];
+  const hit = (k, e) => !q || k === q || k.startsWith(q + '.') || e.name.toUpperCase().includes(q)
+    || e.leaves.some(f => f.id.toUpperCase().includes(q) || String(f.desc || '').toUpperCase().includes(q));
+  for (const n of Object.keys(m).map(Number)) {
+    if (!_genSt.des.includes(n) && hit(String(n), m[n])) out.push(String(n));
+    for (const lb of Object.keys(m[n].subs || {})) if (!_genSt.subs.includes(lb) && hit(lb, m[n].subs[lb])) out.push(lb);
+  }
+  // The one with exactly that number first, then in number order.
+  return out.sort((x, y) => (y === q) - (x === q) || _genKeyCmp(x, y));
 }
+const _genEntry = k => { const m = _genSt.model.des, n = parseInt(k, 10);
+  return String(k).includes('.') ? m[n]?.subs?.[k] : m[n]; };
 function genFind() {
   const el = document.getElementById('genFindList');
   if (!el) return;
   const hits = _genMatches();
-  const label = n => { const nm = _genSt.model.des[n].name; return nm === String(n) ? `DE ${n}` : `DE ${n} · ${esc(nm)}`; };
-  el.innerHTML = hits.slice(0, 60).map(n => `<span class="fw-chip" onclick="genAddDe(${n})" title="Add DE ${n}">${label(n)}</span>`).join('')
+  const label = n => { const nm = _genEntry(n).name; return nm === String(n) ? `DE ${n}` : `DE ${n} · ${esc(nm)}`; };
+  el.innerHTML = hits.slice(0, 60).map(n => `<span class="fw-chip" onclick="genAddDe('${n}')" title="Add DE ${n}">${label(n)}</span>`).join('')
     + (hits.length > 60 ? `<span class="fw-note" style="padding:0 4px">+${hits.length - 60} more — type to narrow</span>` : '')
     || '<span class="fw-note" style="padding:0">No DE left that matches.</span>';
 }
-function genAddDe(n) {
+// A subfield ("62.3") brings its DE with it: it is written inside it.
+function genAddDe(k) {
   _genKeep();
+  const n = parseInt(k, 10);
+  if (String(k).includes('.') && !_genSt.subs.includes(String(k))) _genSt.subs.push(String(k));
   if (!_genSt.des.includes(n)) _genSt.des.push(n);
   const f = document.getElementById('genFind');
   if (f) f.value = '';
   _genRows(); genFind();
 }
 function genAddFirst() { const n = _genMatches()[0]; if (n != null) genAddDe(n); }
-function genDelDe(n) {
+// A DE takes its subfields out with it; a subfield goes alone.
+function genDelDe(k) {
   _genKeep();
-  _genSt.des = _genSt.des.filter(x => x !== n);
+  if (String(k).includes('.')) _genSt.subs = _genSt.subs.filter(x => x !== String(k));
+  else { const n = parseInt(k, 10);
+    _genSt.des = _genSt.des.filter(x => x !== n);
+    _genSt.subs = _genSt.subs.filter(x => parseInt(x, 10) !== n); }
   _genRows(); genFind();
 }
 // ── The Token buffer ──
@@ -44875,13 +44971,13 @@ function genRun() {
   for (const f of rows) if (!slots.includes(f)) values[f.id] = _genRowValue(f);
   for (const f of slots) raw[f.id] = tokens || { bytes: [], tokens: [], problems: [`${f.id}: the Token buffer is empty`] };
   const g = _genMessage(item, { values, raw, tokenArea: _genSt.place === 'end' ? tokens : null,
-    des: _genSt.model.bitmap ? _genSt.des.slice() : null, format: fmt === 'ascii' ? 'ascii' : 'hex' });
+    des: _genSt.model.bitmap ? _genSt.des.slice() : null, subs: _genSt.subs.slice(), format: fmt === 'ascii' ? 'ascii' : 'hex' });
   const res = document.getElementById('genRes');
   const out = _genFormat(g, fmt);
   if (out.error) { res.innerHTML = `<span class="gen-bad">${esc(out.error)}</span>`; document.getElementById('genBody').scrollTop = 0; return; }
   // The message exists, so its increments are spent.
   _genAdvance(rows);
-  _genChoice[_genSt.key] = { des: _genSt.des.slice(), rows: JSON.parse(JSON.stringify(_genSt.rows)), fmt };
+  _genChoice[_genSt.key] = { des: _genSt.des.slice(), subs: _genSt.subs.slice(), rows: JSON.parse(JSON.stringify(_genSt.rows)), fmt };
   _genTokSave();
   _genRows(); _genTokRender();
   const v = _genVerify(item, g, fmt === 'ascii' ? 'ascii' : 'hex');
@@ -46081,7 +46177,7 @@ function _meSave() {
               <li><strong>Overrides</strong> — per field: <strong>TYPE</strong> (how the bytes are read), <strong>SHOW</strong> (display only), <strong>SIZE</strong>, <strong>DE</strong> (data-element number) and <strong>VLG</strong> (where a variable length comes from)</li>
               <li><strong>↶ Undo</strong> — removing overrides (one field's or many), a DDL binding, a recognizer or a business rule, clearing the DEs, and deleting a class each leave a notice with <strong>↶ Undo</strong> that puts it back as it was. Deleting a class still asks you to type DELETE first</li>
               <li><strong>Test</strong> — paste a message under the list and press <strong>▶ Run</strong>: every class is marked as winner, shadowed, rejected or never reached, a failing recognizer says which condition failed, and the winner's fields are shown as the app would parse them</li>
-              <li><strong>Generate</strong> — beside ▶ Run: builds a message from the selected class, its parse spec run in reverse. It shows the class and the DDL it is bound to, and a row per field with a value you can edit: the fields outside the bitmap are always there, and a DE is added from the finder by number or name (✕ leaves it out). Each row shows the field's type and says where its value comes from: <strong>Fixed</strong> (default: zeros for digits, X for text, at the full width), <strong>Random num</strong>, <strong>Random alpha</strong>, <strong>Random hex</strong>, <strong>Blanks</strong> (spaces at the full width; each field offers only what its type can hold), <strong>Increment</strong> (the last generation plus one — the app keeps the count, so values are not repeated, and wraps to 0 past what the field holds), <strong>Date / time</strong> in a format you pick, or <strong>PAN</strong> of the length you set (Luhn-valid). Lengths are computed, never rows. HEX, ASCII or NETADRD, in the class's encoding. The message is parsed back with the class and the dialog says whether it came back as written and which class detects it; then, only when it comes back clean, the Test is cleared and it lands in the Test input, ready for ▶ Run — it is not parsed there for you. If it comes back clean and detected as the class, the window closes and a flash says so; otherwise what went wrong is shown at the top of the window — which recognizer turns it away, which field came back different. <strong>Token buffer</strong> — a section below the rows for an STM / PSTM or ISO / Base24 class: pick a token by id or DDL name from the token maps, value its fields like any row, then <strong>Add</strong> puts it in the buffer with those values fixed (Cancel drops it); the buffer shows each token as its id, name, length and value — the value can be edited there, and what is typed is the token. STM / PSTM carry the buffer after the last field; on an ISO class set DE 63 or 126 to <strong>Token buffer</strong>. The buffer is kept per class. Not yet generated, and named when met: <code>read-tlv</code>, <code>map</code>, <code>de</code> entries, <code>repeat</code>.</li>
+              <li><strong>Generate</strong> — beside ▶ Run: builds a message from the selected class, its parse spec run in reverse. It shows the class and the DDL it is bound to, and a row per field with a value you can edit: the fields outside the bitmap are always there, and a DE is added from the finder by number or name (✕ leaves it out). A DE with a bitmap of its own (Visa DE 62) offers its subfields there too — <code>62.3</code>, numbered as the parse numbers them — and adding one brings its DE; the DE's bitmap marks the subfields added. Each row shows the field's type and says where its value comes from: <strong>Fixed</strong> (default: zeros for digits, X for text, at the full width), <strong>Random num</strong>, <strong>Random alpha</strong>, <strong>Random hex</strong>, <strong>Blanks</strong> (spaces at the full width; each field offers only what its type can hold), <strong>Increment</strong> (the last generation plus one — the app keeps the count, so values are not repeated, and wraps to 0 past what the field holds), <strong>Date / time</strong> in a format you pick, or <strong>PAN</strong> of the length you set (Luhn-valid). Lengths are computed, never rows. HEX, ASCII or NETADRD, in the class's encoding. The message is parsed back with the class and the dialog says whether it came back as written and which class detects it; then, only when it comes back clean, the Test is cleared and it lands in the Test input, ready for ▶ Run — it is not parsed there for you. If it comes back clean and detected as the class, the window closes and a flash says so; otherwise what went wrong is shown at the top of the window — which recognizer turns it away, which field came back different. <strong>Token buffer</strong> — a section below the rows for an STM / PSTM or ISO / Base24 class: pick a token by id or DDL name from the token maps, value its fields like any row, then <strong>Add</strong> puts it in the buffer with those values fixed (Cancel drops it); the buffer shows each token as its id, name, length and value — the value can be edited there, and what is typed is the token. STM / PSTM carry the buffer after the last field; on an ISO class set DE 63 or 126 to <strong>Token buffer</strong>. The buffer is kept per class. Not yet generated, and named when met: <code>read-tlv</code>, <code>map</code>, <code>de</code> entries, <code>repeat</code>.</li>
             </ul>
             <p style="margin:0;color:var(--text-dim);font-size:10.5px">Every recognizer, parse-spec block and override is described in full in the <strong>Specification</strong> below.</p>
           </div></div>

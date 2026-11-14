@@ -834,7 +834,10 @@ the stated width is what keeps bit 1 as data — and `read-bitmap-fields` with
 - The Overrides DE column shows a subfield's number (`DE 62.3`) — from the
   spec's `subfields` map or from Overrides, the spec winning — and the rows
   inside it show the same number dimmed.
-- Generate does not write subfields yet; it reports them as not written.
+- Generate writes them: the subfields picked in its dialog (`62.3`, offered
+  with their DE), each as the parse reads it — by its blocks, or as its field is
+  declared, a group framed by its LEN — and the DE's own bitmap, written blank
+  first, then marked with the bits of those written.
 
 ### 5.15 `read-tlv` — BER framing and tag → element mapping
 

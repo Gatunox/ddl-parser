@@ -1202,8 +1202,8 @@ explicit map over declaration order), the map read by `read-bitmap` with
 - **Not verified on a real message.** Built from synthetic cases only; the user
   has no DE-62 example yet. When one arrives: the DDL fragment and a message in
   hex, then a regression case from them.
-- **Generate** does not write subfields; `_genBitmapFields` reports them as not
-  written.
+- ~~**Generate** does not write subfields~~ — done v1.69.3.0: picked in the
+  dialog like DEs (`62.3`); the DE's bitmap marks those written.
 - ~~**Field Map** shows no subfield numbering~~ — done v1.69.1.5: the Overrides
   DE column shows `DE 62.3` from the spec's `subfields` map. If two specs map
   the same field, the binary spec's number wins.

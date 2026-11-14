@@ -23697,7 +23697,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.69.1.3';
+const APP_VERSION  = '1.69.1.4';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -27424,7 +27424,7 @@ function _meHtmlParseSpec(item) {
     <div class="me-ps-col-resizer" id="me-ps-col-resizer" title="Drag to resize the block reference"></div>
     <div class="me-ps-help${_mePsHelpOpen() ? ' open' : ''}" id="me-ps-help">${_mePsHelpHtml()}</div>
   </div>
-  <div class="me-ps-split-resizer" id="me-ps-split-resizer" title="Drag to resize the spec editor"></div>
+  <div class="me-ps-split-resizer" id="me-ps-split-resizer" title="Drag to resize the spec editor — double-click to fit it to the spec"></div>
   </div>
   </div>`;
   // Note: ${raw} no longer used here — the CodeMirror editor is mounted by
@@ -31562,6 +31562,9 @@ function _meHelpInitSplit(key) {
       split.style.height = Math.min(max, Math.max(min, startH + dy)) + 'px';
     };
   }, () => _mePsSaveSize(hKey, parseInt(split.style.height, 10)));
+  // Double-click: as tall as the content, so all of it shows. Asked 2026-11-14.
+  const hRz = document.getElementById(p.hRzId);
+  if (hRz) hRz.ondblclick = () => _meHelpFitToContent(key);
 
   // Dragging left widens the reference, so the delta is subtracted. The ceiling
   // leaves the content its own floor — a reference that can eat the whole split
@@ -31580,6 +31583,34 @@ function _meHelpInitSplit(key) {
   _meHelpFitHeight(key);
 }
 const _mePsInitSplit = () => _meHelpInitSplit('ps');
+
+// The bar's double-click: the pane becomes exactly as tall as what it holds, so
+// nothing is left to scroll to — taller or shorter than it was. The spec editor
+// scrolls, so its content is measured inside the editor, and the reference
+// beside it, when open, is not cut either. A pane already sized by its content
+// just forgets the height it was dragged to. Kept like a drag is.
+function _meHelpFitToContent(key) {
+  const p = _ME_HELP[key];
+  const split = document.getElementById(p.splitId);
+  if (!split) return;
+  const hKey = `up_${p.storageKey}_split_h`;
+  if (!split.classList.contains('me-hs-fixed')) {
+    try { localStorage.removeItem(hKey); } catch (e) {}
+    _meHelpFitHeight(key);
+    return;
+  }
+  const host = document.getElementById(p.mainId);
+  const sc = host && host.querySelector('.cm-scroller');
+  const ct = sc && sc.querySelector('.cm-content');
+  if (!ct) return;
+  // The split's own height, less what the editor shows, plus what it holds:
+  // whatever sits around the scroller is kept, whatever it is.
+  let want = split.getBoundingClientRect().height - sc.clientHeight + ct.getBoundingClientRect().height;
+  if (p.isOpen) want = Math.max(want, _meHelpPanelH(document.getElementById(p.id)));
+  want = Math.max(_ME_PS_SPLIT_MIN, Math.ceil(want));
+  split.style.height = want + 'px';
+  _mePsSaveSize(hKey, want);
+}
 
 // Expanded form: one attribute per line. The counterpart to _compactJsonc —
 // without it, switching back to Expanded did nothing at all, because _formatJsonc
@@ -32390,7 +32421,7 @@ ${warnHtml}
 <div class="me-ps-col-resizer" id="me-fm-col-resizer" title="Drag to resize the column reference"></div>
 <div class="me-ps-help${fmHelpOpen ? ' open' : ''}" id="me-fm-help">${_meFmHelpHtml()}</div>
 </div>
-<div class="me-ps-split-resizer" id="me-fm-split-resizer" title="Drag to resize the Overrides panel"></div>
+<div class="me-ps-split-resizer" id="me-fm-split-resizer" title="Drag to resize the Overrides panel — double-click to fit it to its content"></div>
 </div>
 `;
 
@@ -36262,7 +36293,7 @@ function _meHtmlRecs(item) {
     <div class="me-ps-col-resizer" id="me-rec-col-resizer" title="Drag to resize the recognizer reference"></div>
     <div class="me-ps-help${_meHelpIsOpen('rec') ? ' open' : ''}" id="me-rec-help">${_meRecHelpHtml()}</div>
   </div>
-  <div class="me-ps-split-resizer" id="me-rec-split-resizer" title="Drag to resize the recognizer list"></div>
+  <div class="me-ps-split-resizer" id="me-rec-split-resizer" title="Drag to resize the recognizer list — double-click to fit it to its content"></div>
 </div>`;
   return h;
 }
@@ -45887,7 +45918,7 @@ function _meSave() {
               <li><strong>Identity</strong> — type code (up to 5 characters), label, volume and colour</li>
               <li><strong>Recognizers</strong> — the conditions that identify the class (see <em>Detection</em>)</li>
               <li><strong>DDL Bindings</strong> — the DDLs this class is parsed with; the first is the default</li>
-              <li><strong>Parse Spec</strong> — the steps that walk the bytes: fixed reads, bitmaps (the message's, and a DE's own that marks its subfields, like Visa DE 62), tokens, TLV, segments, <code>when</code> conditions and more. <strong>Compact</strong> puts each block on one line and <strong>Expand</strong> gives each attribute its own; the button names what it will do, keeps comments, and ↶ undoes it. It only changes the layout, so it asks for no Save, and every spec opens in the layout chosen last</li>
+              <li><strong>Parse Spec</strong> — the steps that walk the bytes: fixed reads, bitmaps (the message's, and a DE's own that marks its subfields, like Visa DE 62), tokens, TLV, segments, <code>when</code> conditions and more. <strong>Compact</strong> puts each block on one line and <strong>Expand</strong> gives each attribute its own; the button names what it will do, keeps comments, and ↶ undoes it. It only changes the layout, so it asks for no Save, and every spec opens in the layout chosen last. Double-click the bar under the editor to make it as tall as the spec; the bars under Recognizers and Overrides do the same for their lists</li>
               <li><strong>Business Rules</strong> — what the business requires of a message, such as <em>a network management message must carry DE-70</em>: <em>When</em> some conditions hold, others <em>Must hold</em>. Each parsed message gets a <em>rules</em> badge beside its type — green when every rule that applies passes, amber when some fail, red when all do; click it for what failed. A rule with a <em>Tag name</em> also shows that tag beside the type when it is met; one with only <em>When</em> and a tag just labels the messages it matches, such as <em>RECURRING</em> or <em>REVERSAL</em></li>
               <li><strong>Overrides</strong> — per field: <strong>TYPE</strong> (how the bytes are read), <strong>SHOW</strong> (display only), <strong>SIZE</strong>, <strong>DE</strong> (data-element number) and <strong>VLG</strong> (where a variable length comes from)</li>
               <li><strong>↶ Undo</strong> — removing overrides (one field's or many), a DDL binding, a recognizer or a business rule, clearing the DEs, and deleting a class each leave a notice with <strong>↶ Undo</strong> that puts it back as it was. Deleting a class still asks you to type DELETE first</li>

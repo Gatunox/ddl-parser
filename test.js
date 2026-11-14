@@ -28952,6 +28952,55 @@ END
     assert.ok(/must be an object/.test(lintOf({ subfields: [] })), 'a non-object map went unreported');
   });
 }
+// ── Double-click a split bar: fit the pane to its content ───────────────────
+// Asked 2026-11-14: the spec editor kept its last height, so a long spec had to
+// be dragged open by hand to see all of it.
+{
+  console.log('\nsplit bar — double-click fits the pane to its content');
+  const run = c => vm.runInContext(c, sandbox);
+  const fake = (contentH, fixed = true) => {
+    const style = {};
+    const ct = { getBoundingClientRect: () => ({ height: contentH }) };
+    const sc = { clientHeight: 403, querySelector: () => ct };
+    elStubs['me-ps-split'] = { style, getBoundingClientRect: () => ({ height: 405 }),
+      classList: { contains: c => fixed && c === 'me-hs-fixed' } };
+    elStubs['me-ps-ta-host'] = { querySelector: () => sc };
+    return style;
+  };
+  const done = () => { delete elStubs['me-ps-split']; delete elStubs['me-ps-ta-host']; };
+
+  test('[REGRESSION] double-clicking the spec editor bar makes it as tall as the spec', () => {
+    const keepOpen = run('_ME_HELP.ps.isOpen'), keepH = storage.getItem('up_me_ps_split_h');
+    try {
+      run('_ME_HELP.ps.isOpen = false');
+      let st = fake(499);
+      run("_meHelpFitToContent('ps')");
+      eq(st.height, '501px', 'a spec taller than the editor was not shown whole');
+      eq(storage.getItem('up_me_ps_split_h'), '501', 'the fitted height was not kept like a drag');
+      st = fake(60);
+      run("_meHelpFitToContent('ps')");
+      eq(st.height, '180px', 'a short spec shrank the editor below its floor');
+    } finally {
+      done(); run(`_ME_HELP.ps.isOpen = ${keepOpen}`);
+      if (keepH === null) storage.removeItem('up_me_ps_split_h'); else storage.setItem('up_me_ps_split_h', keepH);
+    }
+    assert.ok(/hRz\.ondblclick = \(\) => _meHelpFitToContent\(key\)/.test(psFnSource('_meHelpInitSplit')),
+      'the bar is not wired to the double-click');
+  });
+
+  test('[REGRESSION] on a pane sized by its content, double-click forgets the dragged height', () => {
+    const keepH = storage.getItem('up_me_ps_split_h');
+    try {
+      storage.setItem('up_me_ps_split_h', '900');
+      fake(499, false);
+      run("_meHelpFitToContent('ps')");
+      eq(storage.getItem('up_me_ps_split_h'), null, 'the dragged height still wins over the content');
+    } finally {
+      done();
+      if (keepH === null) storage.removeItem('up_me_ps_split_h'); else storage.setItem('up_me_ps_split_h', keepH);
+    }
+  });
+}
 // ── Summary ───────────────────────────────────────────────────────────────────
 console.log(`\n${'─'.repeat(50)}`);
 if (failed === 0) {

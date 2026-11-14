@@ -783,6 +783,46 @@ the distinction is the whole point of the previous paragraph:
 | an explicit `length` on the entry | what the DE **is** — you said so | at the end of the window, whatever the blocks read |
 | the element's **declared size** | what the element **can hold** | where the blocks actually stopped |
 
+**A DE with a bitmap of its own — `subfields`.** Some DEs open with a bitmap
+whose bits number the DE's **subfields**, not the message's DEs: Visa's DE 62
+carries 8 bytes of map, then the subfields it marks (62.1 to 62.27, the rest
+reserved). Inside that DE's entry, a `read-bitmap` with `length` reads the map —
+the stated width is what keeps bit 1 as data — and `read-bitmap-fields` with
+`subfields` walks it:
+
+```jsonc
+"62": [
+  {"read-bitmap": {"field": "SF-BMP", "length": 8, "encoding": "binary"}},
+  {"read-bitmap-fields": {"bitmap": "SF-BMP", "subfields": {
+    "1": {"field": "AUTH-IND"},
+    "2": {"field": "TRAN-ID"},
+    "3": {"field": "VALID", "blocks": [ … ]}}}}]
+```
+
+- Every subfield is **mapped by hand**; nothing is taken from the DDL's order.
+  An entry is `{field}`, `[blocks]`, or `{field, blocks}`.
+- `{field}` reads the element as declared: a leaf at its size, a group leaf by
+  leaf — framed by its own LEN when it has one (a VLG flag, or a LEN leaf
+  recognised by name), as the DE walk frames a group.
+- **With `blocks`, the blocks say how the subfield is read**, whatever they are.
+  The engine reads no LEN of its own first; the DDL's declared size — every
+  leaf, LEN included — is only the most the subfield can hold, so reading past
+  it is reported and the next subfield starts where the blocks stopped. A
+  62.22 declared LEN + DATA X(99) and read by `read-length-value` takes only
+  the bytes the message carries. `field` scopes the names inside the blocks;
+  without it there is no limit but the DE's.
+- Names resolve inside the DE: `SF-BMP` is `F62.SF-BMP` when the DDL declares it,
+  and the bitmap row takes that id.
+- Present subfields are read in bit order at the cursor; an absent one takes no
+  room.
+- A set bit with no entry — a reserved one, say — is reported and **ends the
+  walk**: nothing says how long that subfield is, and reading on would misplace
+  every later one. Where the DE then ends follows the table above.
+- Rows carry the subfield number (`deSub`, `"62.1"`) beside the DE's `deNum`,
+  and Parse Results badges it `DE-62.1`, once, as it does a DE.
+- `de` is ignored beside `subfields`, and both the parse and the linter say so.
+- Generate does not write subfields yet; it reports them as not written.
+
 ### 5.15 `read-tlv` — BER framing and tag → element mapping
 
 `"ber": true` parses EMV BER-TLV: a tag is one byte unless its low five bits are

@@ -26180,6 +26180,15 @@ console.log('\ngenerate a message');
       return JSON.stringify({ out: g.out, written: g.written, problems: g.problems, v }); })()`));
   };
 
+  test('[REGRESSION] generate: "subfields" says it is not written yet instead of walking them as DEs', () => withTree(() => {
+    const it = iso('ascii', 'binary');
+    it.parse_spec_binary[2] = { 'read-bitmap-fields': { bitmap: 'PBIT-MAP', de: { '2': [
+      { 'read-bitmap': { field: 'SF-BMP', length: 8, encoding: 'binary' } },
+      { 'read-bitmap-fields': { bitmap: 'SF-BMP', subfields: { '1': { field: 'PAN' } } } }] } } };
+    const r = gen(it, { des: [2, 3] });
+    assert.ok(r.problems.some(p => /subfields are not generated yet/.test(p)), JSON.stringify(r.problems));
+  }));
+
   test('generate: an ISO message round-trips in ASCII and EBCDIC, binary and hex bitmap, secondary included', () => withTree(() => {
     for (const enc of ['ascii', 'ebcdic']) for (const bm of ['binary', 'hex']) {
       const r = gen(iso(enc, bm), { values: { 'DE-2.PAN': '4111111111111111', 'DE-5': '513', 'DE-69': 'ZZ' }, des: [2, 3, 5, 69] });
@@ -28737,6 +28746,188 @@ console.log('\nParse Spec — layout is not an edit');
       eq(run('_mePsShapeText')(src), run('_expandJsonc(' + JSON.stringify(src) + ')'), 'not shown expanded');
     } finally { if (sandbox.__k === null) storage.removeItem('up_me_ps_fmt'); else storage.setItem('up_me_ps_fmt', sandbox.__k); }
     assert.ok(/: _mePsShapeText\(\(typeof item\[srcField\] === 'string'/.test(psFnSource('_mePsMountCM')), 'the editor mounts the stored layout');
+  });
+}
+// ── A bitmap inside a DE numbers its SUBFIELDS (TODO 26) ───────────────────
+// Visa's DE 62 opens with an 8-byte bitmap of its own whose bit 1 is 62.1, not
+// DE 1. read-bitmap-fields mapped every bit through the message's DE numbering,
+// so there was no way to say that. "subfields" maps each one by hand.
+{
+  console.log('\nread-bitmap-fields — subfields numbered by a DE\'s own bitmap');
+  const SUB_DDL = `DEFINITION MSG.
+  02 BITMAP PIC X(8).
+  02 PAD PIC X(1).
+  02 F62.
+    04 SF-BMP PIC X(8).
+    04 AUTH-IND PIC X(1).
+    04 TRAN-ID PIC X(4).
+    04 VALID PIC X(2).
+  02 TAIL PIC X(4).
+END
+`;
+  // Message bits 2 (F62) and 3 (TAIL). Subfield bitmap given per case.
+  const subRun = (subMap, subBits, body, ddl) => {
+    S.ddlTree = { V: { S: { D: ddl || SUB_DDL } } };
+    S.inputFormat = 'hex';
+    const b = [0x60, 0, 0, 0, 0, 0, 0, 0, ...subBits];
+    for (const c of body) b.push(c.charCodeAt(0));
+    return meExecParseSpec({ name: 'X', ddl_bindings: ['V/S/D/MSG'],
+      parse_spec_binary: [
+        { 'read-bitmap': { field: 'BITMAP', encoding: 'binary' } },
+        { 'read-bitmap-fields': { bitmap: 'BITMAP', de: { '2': { blocks: [
+          { 'read-bitmap': { field: 'SF-BMP', length: 8, encoding: 'binary' } },
+          { 'read-bitmap-fields': { bitmap: 'SF-BMP', subfields: subMap } },
+        ] } } } },
+      ] }, b);
+  };
+  const MAP = { '1': { field: 'AUTH-IND' }, '2': { field: 'TRAN-ID' }, '3': { field: 'VALID' } };
+  const row = (ctx, id) => ctx.fields.find(f => f.id === id);
+
+  test('[REGRESSION] bit n of a DE\'s own bitmap reads subfield n, and bit 1 is data', () => {
+    // 0xA0 = bits 1 and 3: AUTH-IND and VALID present, TRAN-ID absent.
+    const ctx = subRun(MAP, [0xA0, 0, 0, 0, 0, 0, 0, 0], 'Y' + '01' + 'TAIL');
+    const errs = ctx.fields.filter(f => f.error).map(f => f.id + ': ' + f.error);
+    deepEq(errs, [], 'the walk reported errors');
+    eq(row(ctx, 'F62.SF-BMP')?.valueLength, 8, 'the subfield bitmap is not the DE\'s own leaf, 8 bytes');
+    eq(row(ctx, 'F62.AUTH-IND')?.value, 'Y', 'bit 1 was not read as subfield 1');
+    eq(row(ctx, 'F62.VALID')?.value, '01', 'bit 3 was not read as subfield 3, at the cursor');
+    eq(row(ctx, 'F62.TRAN-ID'), undefined, 'an absent subfield took room');
+    eq(row(ctx, 'TAIL')?.value, 'TAIL', 'the DE after the subfields starts at the wrong place');
+    eq(row(ctx, 'F62.AUTH-IND').deSub, '2.1', 'the row does not carry its subfield number');
+    eq(row(ctx, 'F62.VALID').deSub, '2.3', 'the row does not carry its subfield number');
+    eq(row(ctx, 'F62.VALID').deNum, 2, 'the row lost its DE');
+    eq(row(ctx, 'TAIL').deSub, undefined, 'a later DE was stamped as a subfield');
+  });
+
+  test('[REGRESSION] a set subfield bit with no entry is reported and ends the walk', () => {
+    // 0xE0 = bits 1, 2, 3, but 2 is not mapped: its length is unknown.
+    const ctx = subRun({ '1': MAP['1'], '3': MAP['3'] }, [0xE0, 0, 0, 0, 0, 0, 0, 0], 'Y' + 'ABCD' + '01' + 'TAIL');
+    const err = ctx.fields.find(f => f.error && /Subfield 2\.2/.test(f.error));
+    assert.ok(err, 'an unmapped set bit was not reported');
+    assert.ok(/no entry/.test(err.error), err.error);
+    eq(row(ctx, 'F62.VALID'), undefined, 'the walk read on past a subfield of unknown length');
+    // Reserved bits are the same case: bit 28 set, nothing maps it.
+    const r = subRun(MAP, [0x80, 0, 0, 0x10, 0, 0, 0, 0], 'Y' + 'TAIL');
+    assert.ok(r.fields.some(f => f.error && /Subfield 2\.28/.test(f.error)), 'a reserved bit set went unreported');
+  });
+
+  test('[REGRESSION] a subfield entry can read with its own blocks, scoped to the DE', () => {
+    const ctx = subRun({ '1': MAP['1'], '2': { field: 'TRAN-ID', blocks: [
+      { 'read-fixed': { length: 2, as: 'TRAN-ID.HEAD' } }, { 'read-fixed': { length: 2, as: 'TRAN-ID.REST' } }] } },
+      [0xC0, 0, 0, 0, 0, 0, 0, 0], 'Y' + 'ABCD' + 'TAIL');
+    eq(row(ctx, 'TRAN-ID.HEAD')?.value, 'AB', 'the subfield\'s blocks did not run');
+    eq(row(ctx, 'TRAN-ID.REST')?.value, 'CD', 'the subfield\'s blocks did not run in order');
+    eq(row(ctx, 'TRAN-ID.REST').deSub, '2.2', 'a block row lost its subfield number');
+    eq(row(ctx, 'TAIL')?.value, 'TAIL', 'the DE after the subfields starts at the wrong place');
+  });
+
+  test('[REGRESSION] a subfield group with a LEN of its own is framed by it', () => {
+    // An LLVAR subfield read at its declared size took all 10 bytes of capacity
+    // and pushed every later subfield off.
+    const VAR_DDL = SUB_DDL.replace('    04 VALID PIC X(2).\n',
+      '    04 VALID PIC X(2).\n    04 USER.\n      06 LEN PIC 9(2).\n      06 DATA PIC X(10).\n    04 LAST PIC X(1).\n');
+    const ctx = subRun({ '1': MAP['1'], '4': { field: 'USER' }, '5': { field: 'LAST' } },
+      [0x98, 0, 0, 0, 0, 0, 0, 0], 'Y' + '03ABC' + 'Z' + 'TAIL', VAR_DDL);   // bits 1, 4, 5
+    deepEq(ctx.fields.filter(f => f.error).map(f => f.error), [], 'the walk reported errors');
+    eq(row(ctx, 'F62.USER.DATA')?.value, 'ABC', 'the subfield was not framed by its LEN');
+    eq(row(ctx, 'F62.LAST')?.value, 'Z', 'the subfield after a variable one starts at the wrong place');
+    eq(row(ctx, 'F62.USER.DATA').deSub, '2.4', 'a framed subfield lost its number');
+    eq(row(ctx, 'TAIL')?.value, 'TAIL', 'the DE after the subfields starts at the wrong place');
+  });
+
+  test('[REGRESSION] a subfield\'s blocks can say how it is read — read-length-value', () => {
+    // Without "field" the blocks decide the subfield's extent: here a length on
+    // the wire that the DDL does not declare.
+    const body = ['Y', '\u0000', '\u0002', '0', '1', 'T', 'A', 'I', 'L'].join('');
+    const ctx = subRun({ '1': MAP['1'], '3': [
+      { 'read-length-value': { length_encoding: 'uint16-be', as: 'F62.VALID' } }] },
+      [0xA0, 0, 0, 0, 0, 0, 0, 0], body);
+    deepEq(ctx.fields.filter(f => f.error).map(f => f.error), [], 'the walk reported errors');
+    eq(row(ctx, 'F62.VALID')?.value, '01', 'the subfield was not read by its own length');
+    // With "field", the element's declared size frames them, as for a "de"
+    // entry: VALID declares 2 bytes, and 2 + 2 do not fit — reported, not hidden.
+    const framed = subRun({ '1': MAP['1'], '3': { field: 'VALID', blocks: [
+      { 'read-length-value': { length_encoding: 'uint16-be', as: 'F62.VALID' } }] } },
+      [0xA0, 0, 0, 0, 0, 0, 0, 0], body);
+    assert.ok(framed.fields.some(f => f.error && /DE 2\.3: its blocks read 2 byte\(s\) past/.test(f.error)),
+      'reading past the declared size went unreported: ' + JSON.stringify(framed.fields.filter(f => f.error)));
+    eq(row(ctx, 'F62.VALID').deSub, '2.3', 'the row lost its subfield number');
+    eq(row(ctx, 'TAIL')?.value, 'TAIL', 'the DE after the subfields starts at the wrong place');
+  });
+
+  test('[REGRESSION] a subfield with blocks is read by its blocks — the engine reads no LEN first', () => {
+    // The DDL declares 62.22 as LEN 9(2) + DATA X(99): the most it can hold. The
+    // blocks say how it is read; the engine reading the LEN first left them on
+    // the data, and read-length-value took "AB" for a length.
+    const G_DDL = SUB_DDL.replace('    04 VALID PIC X(2).\n',
+      '    04 VALID PIC X(2).\n    04 SF22.\n      06 LEN PIC 9(2).\n      06 DATA PIC X(99).\n    04 LAST PIC X(1).\n');
+    const go = blocks => subRun({ '1': MAP['1'], '4': { field: 'SF22', blocks }, '5': { field: 'LAST' } },
+      [0x98, 0, 0, 0, 0, 0, 0, 0], 'Y' + '03ABC' + 'Z' + 'TAIL', G_DDL);
+    const a = go([{ 'read-length-value': { length_encoding: 'ascii', length_size: 2, as: 'SF22-VAL' } }]);
+    deepEq(a.fields.filter(f => f.error).map(f => f.error), [], 'the blocks did not read the subfield');
+    eq(row(a, 'SF22-VAL')?.value, 'ABC', 'read-length-value did not read only what came');
+    eq(row(a, 'F62.SF22.LEN'), undefined, 'the engine read the LEN before the blocks');
+    eq(row(a, 'F62.LAST')?.value, 'Z', 'the next subfield starts at the wrong place');
+    // Any blocks, not read-length-value only.
+    const b = go([{ 'read-fixed': { length: 2, as: 'SF22-L' } }, { 'read-fixed': { length: 3, as: 'SF22-D' } }]);
+    eq(row(b, 'SF22-L')?.value, '03', 'read-fixed did not start on the subfield');
+    eq(row(b, 'SF22-D')?.value, 'ABC', 'the second block did not follow');
+    eq(row(b, 'F62.LAST')?.value, 'Z', 'the next subfield starts at the wrong place');
+    // Full to its declared 99: LEN and DATA both count toward what it can hold.
+    const full = subRun({ '1': MAP['1'], '4': { field: 'SF22', blocks: [
+      { 'read-length-value': { length_encoding: 'ascii', length_size: 2, as: 'SF22-VAL' } }] }, '5': { field: 'LAST' } },
+      [0x98, 0, 0, 0, 0, 0, 0, 0], 'Y' + '99' + 'D'.repeat(99) + 'Z' + 'TAIL', G_DDL);
+    deepEq(full.fields.filter(f => f.error).map(f => f.error), [], 'a subfield full to its declared size was cut short');
+    eq(row(full, 'F62.LAST')?.value, 'Z', 'the next subfield starts at the wrong place');
+    // Without blocks the LEN still frames it.
+    const c = subRun({ '1': MAP['1'], '4': { field: 'SF22' }, '5': { field: 'LAST' } },
+      [0x98, 0, 0, 0, 0, 0, 0, 0], 'Y' + '03ABC' + 'Z' + 'TAIL', G_DDL);
+    eq(row(c, 'F62.SF22.DATA')?.value, 'ABC', 'a field-only subfield lost its LEN framing');
+  });
+
+  test('[REGRESSION] a subfield walk leaves the message\'s DE walk as it was', () => {
+    // length_mode belongs to the outer walk; the inner one must not reset it.
+    S.ddlTree = { V: { S: { D: SUB_DDL } } };
+    S.inputFormat = 'hex';
+    const b = [0x60, 0, 0, 0, 0, 0, 0, 0, 0x80, 0, 0, 0, 0, 0, 0, 0];
+    for (const c of 'YTAIL') b.push(c.charCodeAt(0));
+    const ctx = meExecParseSpec({ name: 'X', ddl_bindings: ['V/S/D/MSG'], parse_spec_binary: [
+      { 'read-bitmap': { field: 'BITMAP', encoding: 'binary' } },
+      { 'read-bitmap-fields': { bitmap: 'BITMAP', length_mode: 'smart', de: { '2': { blocks: [
+        { 'read-bitmap': { field: 'SF-BMP', length: 8, encoding: 'binary' } },
+        { 'read-bitmap-fields': { bitmap: 'SF-BMP', subfields: MAP } }] } } } }] }, b);
+    eq(row(ctx, 'TAIL')?.value, 'TAIL', 'the DE after the subfields starts at the wrong place');
+    // What the walk owns is set after it decides which walk it is: a subfield
+    // walk returning later would reset length_mode / vlg_identifier for the DEs
+    // after it.
+    const src = psFnSource('_meExecBitmapFields');
+    assert.ok(src.indexOf('_meExecSubfieldBits(') < src.indexOf('ctx.vlgIdentifier ='), 'the subfield walk resets vlg_identifier');
+    assert.ok(src.indexOf('_meExecSubfieldBits(') < src.indexOf('ctx.lenMode ='), 'the subfield walk resets length_mode');
+  });
+
+  test('[REGRESSION] a subfield is badged with its own number, once', () => {
+    const ctx = subRun(MAP, [0xA0, 0, 0, 0, 0, 0, 0, 0], 'Y' + '01' + 'TAIL');
+    const out = renderRows(ctx.fields.filter(f => !f.error));
+    const badges = [...out.matchAll(/DE-([\d.]+)<\/span>/g)].map(m => m[1]);
+    deepEq(badges, ['2', '2.1', '2.3', '3'], 'subfield badges');
+  });
+
+  test('[REGRESSION] the linter checks "subfields" entries', () => {
+    S.ddlTree = { V: { S: { D: SUB_DDL } } };
+    const lintOf = sub => {
+      const spec = [
+        { 'read-bitmap': { field: 'BITMAP', encoding: 'binary' } },
+        { 'read-bitmap-fields': { bitmap: 'BITMAP', de: { '2': { blocks: [
+          { 'read-bitmap': { field: 'SF-BMP', length: 8, encoding: 'binary' } },
+          { 'read-bitmap-fields': { bitmap: 'SF-BMP', ...sub } }] } } } }];
+      return mePsLintWarns({ ddl_bindings: ['V/S/D/MSG'], parse_spec_binary: spec }, spec).join(' | ');
+    };
+    eq(lintOf({ subfields: MAP }), '', 'a correct map warns');
+    assert.ok(/"subfields" key "0"/.test(lintOf({ subfields: { '0': { field: 'AUTH-IND' } } })), 'a bad key went unreported');
+    assert.ok(/entry 4 needs a "field" or "blocks"/.test(lintOf({ subfields: { '4': {} } })), 'an empty entry went unreported');
+    assert.ok(/"NOPE" not found/.test(lintOf({ subfields: { '1': { field: 'NOPE' } } })), 'an unknown field went unreported');
+    assert.ok(/"de" is ignored/.test(lintOf({ subfields: MAP, de: {} })), '"de" beside "subfields" went unreported');
+    assert.ok(/must be an object/.test(lintOf({ subfields: [] })), 'a non-object map went unreported');
   });
 }
 // ── Summary ───────────────────────────────────────────────────────────────────

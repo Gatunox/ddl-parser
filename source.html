@@ -16246,10 +16246,13 @@ function renderFieldTable(msg) {
   // so the token tables below share the count — a DE badged in the main list is
   // not badged again inside a token.
   const _deSeen = new Set();
-  const _deBadgeFor = de => {
-    if (de == null || _deSeen.has(de)) return '';
-    _deSeen.add(de);
-    return `<span class="c-de-badge" title="ISO 8583 Data Element ${de}">DE-${de}</span>`;
+  // A subfield numbered by its DE's own bitmap is badged with that number
+  // (DE-62.1), once, like a DE.
+  const _deBadgeFor = (de, sub) => {
+    const key = sub != null ? sub : de;
+    if (key == null || _deSeen.has(key)) return '';
+    _deSeen.add(key);
+    return `<span class="c-de-badge" title="${sub != null ? `Subfield ${sub}` : `ISO 8583 Data Element ${de}`}">DE-${key}</span>`;
   };
   // The group row. Its value is its children's values combined — the same text
   // shown on the individual elements — and is rendered whether or not it is
@@ -16420,7 +16423,7 @@ function renderFieldTable(msg) {
       : '';
     // Once only, on the first row that carries this DE. The parse puts deNum on
     // every leaf of a group, so this used to print "DE-2" down the whole group.
-    const deBadge    = _deBadgeFor(f.deNum);
+    const deBadge    = _deBadgeFor(f.deNum, f.deSub);
     const unreliableBadge = f.unreliable
       ? `<span class="unreliable-badge">unreliable</span>` : '';
     const rowCls    = [sel, f.isRedefines ? 'row-redef' : '', f.unreliable ? 'row-unreliable' : '',
@@ -23688,7 +23691,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.69.0.6';
+const APP_VERSION  = '1.69.1.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -28294,6 +28297,7 @@ const _PS_HELP = {
     // its absence to be inferred, which is only readable if you already know.
     dflts: {
       de: 'none — every present DE is read from its DDL element',
+      subfields: 'none — the bits are the message\'s DEs',
       length_mode: '<code>"strict"</code> — a length longer than the DDL declares is reported, and the payload still stops at the declared size',
     },
     desc: [
@@ -28313,6 +28317,7 @@ const _PS_HELP = {
       'Standard ISO 8583 parsing — the canonical way to walk DE fields per the bitmap.',
       'One DE needs <b>different parsing from the rest</b> (EMV DE-55 as TLV) — put just that bit in <code>de</code>; every other set bit is read exactly as before.',
       'A DE\'s length is on the wire but its LEN element was left out of the DDL — <code>length_prefix</code> on the entry frames it.',
+      'A DE opens with a <b>bitmap of its own</b> whose bits say which of its subfields follow (Visa DE 62) — <code>subfields</code> inside that DE\'s <code>de</code> entry.',
     ],
     attrs: [
       ['bitmap', 'string', true, [
@@ -28362,6 +28367,18 @@ const _PS_HELP = {
           ['<code>{"bytes": 2, "type": "hex-char"}</code>', 'The same, with the encoding stated. Auto-detect cannot tell <code>00 74</code> meaning 74 from the same bytes meaning 116, so state it whenever you know. <code>"count": "digits"</code> works here too.'],
           'This <b>frames</b> the whole entry, so every block in it shares the one window. <code>read-length-value</code> instead <b>captures</b> the payload as a single row.',
         ]),
+      ]],
+      ['subfields', '{ "<bit>": {field} | [blocks] | {field, blocks} }', false, [
+        'The bitmap belongs to <b>one DE</b> and its bits number that DE\'s <b>subfields</b>: bit 1 is the first subfield, not DE 1. Visa\'s DE 62 is the case — 8 bytes of bitmap, then the subfields it marks.',
+        'Used inside the DE\'s <code>de</code> entry, after a <code>read-bitmap</code> with <code>length</code>. The <code>length</code> is what makes bit 1 data: without it the ISO rule reads bit 1 as "a secondary bitmap follows".',
+        'Every subfield is mapped <b>by hand</b> — nothing is taken from the order of the DDL. Keys are bit numbers:',
+        ['<code>"1": {"field": "AUTH-IND"}</code>', 'Read that element as the DDL declares it — a leaf, or a group leaf by leaf, framed by its own LEN when it has one. The name resolves inside the DE.'],
+        ['<code>"3": [blocks]</code>', 'Read the subfield with its own blocks — any blocks. <code>{"field", "blocks"}</code> names the element the blocks run inside.'],
+        'With <code>blocks</code>, <b>the blocks decide</b> how the subfield is read: the engine reads no LEN first, and what the DDL declares is only the most it can hold. A subfield declared LEN + DATA X(99) and read by <code>read-length-value</code> takes only the bytes that came.',
+        'Present subfields are read in bit order <b>at the cursor</b>: an absent one takes no room.',
+        'A bit that is set and has no entry — a reserved one, say — is reported and <b>ends the walk</b>: nothing says how long that subfield is, and reading on would put every later one in the wrong place.',
+        'Rows carry the subfield\'s number, and Parse Results badges it: <code>DE-62.1</code>.',
+        'Not together with <code>de</code>, which numbers the message\'s DEs; it is ignored and reported.',
       ]],
     ],
     examples: [
@@ -28420,6 +28437,15 @@ const _PS_HELP = {
         spec: [{"read-bitmap": {"field": "BITMAP", "encoding": "binary"}},
                {"read-bitmap-fields": {"bitmap": "BITMAP",
                  "overrides": {"DE-A": {"de": 2, "type": "hex-char"}}}}] },
+      { what: '<b>subfields</b> — DE-2 opens with a bitmap of its own: 0xA0 marks subfields 1 and 3, so AUTH-IND and VALID are read and TRAN-ID takes no room',
+        ddl: 'DEFINITION MSG.\n  02 BITMAP PIC X(8).\n  02 PAD PIC X(1).\n  02 F62.\n    04 SF-BMP PIC X(8).\n    04 AUTH-IND PIC X(1).\n    04 TRAN-ID PIC X(4).\n    04 VALID PIC X(2).\nEND\n',
+        def: 'MSG',
+        payload: '40 00 00 00 00 00 00 00 A0 00 00 00 00 00 00 00 59 30 31',
+        spec: [{"read-bitmap": {"field": "BITMAP", "encoding": "binary"}},
+               {"read-bitmap-fields": {"bitmap": "BITMAP", "de": {"2": [
+                 {"read-bitmap": {"field": "SF-BMP", "length": 8, "encoding": "binary"}},
+                 {"read-bitmap-fields": {"bitmap": "SF-BMP", "subfields": {
+                   "1": {"field": "AUTH-IND"}, "2": {"field": "TRAN-ID"}, "3": {"field": "VALID"}}}}]}}}] },
       ['Standard usage after read-bitmap', [{"read-bitmap": {"field": "BITMAP", "encoding": "hex"}}, {"read-bitmap-fields": "BITMAP"}]],
       ['DE-55 as EMV TLV, everything else as usual', [{"read-bitmap-fields": {"bitmap": "BITMAP", "de": {
         "55": [{"read-tlv": {"ber": true, "tags": {"9F26": {"field": "ARQC"}, "9F36": {"field": "ATC"}}}}]
@@ -30571,6 +30597,32 @@ function _mePsLintWarns(item, parsed, inertOut) {
                   const _prevScope = _lintScope;
                   _lintScope = (_entField && ddlIds.has(_entField)) ? _entField : _deElementOf(bit);
                   walk(blocks, `${n}.de.${bit}`);
+                  _lintScope = _prevScope;
+                }
+              }
+            }
+          }
+          // A bitmap of the element's own: every subfield is mapped by hand.
+          const subCfg = (attrs && typeof attrs === 'object') ? attrs.subfields : undefined;
+          if (subCfg !== undefined) {
+            if (deMapCfg != null)
+              warns.push(`[block ${n}] read-bitmap-fields: "de" is ignored with "subfields" — the bits number this element's subfields`);
+            if (!subCfg || typeof subCfg !== 'object' || Array.isArray(subCfg)) {
+              warns.push(`[block ${n}] read-bitmap-fields "subfields" must be an object keyed by subfield number, e.g. {"1": {"field": "…"}}`);
+            } else {
+              for (const [k, ent] of Object.entries(subCfg)) {
+                if (!/^\d+$/.test(k) || +k < 1 || +k > 128)
+                  warns.push(`[block ${n}] read-bitmap-fields "subfields" key "${k}" is not a bit number between 1 and 128`);
+                const blocks = Array.isArray(ent) ? ent : ent?.blocks;
+                const fld = ent && !Array.isArray(ent) && typeof ent === 'object' ? ent.field : null;
+                if (fld) checkRef(`${n}.subfields.${k}`, 'subfields.field', fld);
+                if (!fld && (!Array.isArray(blocks) || !blocks.length))
+                  warns.push(`[block ${n}] read-bitmap-fields "subfields" entry ${k} needs a "field" or "blocks"`);
+                else if (Array.isArray(blocks) && blocks.length) {
+                  const _prevScope = _lintScope;
+                  if (fld && _lintScope && ddlIds.has(`${_lintScope}.${fld}`)) _lintScope = `${_lintScope}.${fld}`;
+                  else if (fld && ddlIds.has(fld)) _lintScope = fld;
+                  walk(blocks, `${n}.subfields.${k}`);
                   _lintScope = _prevScope;
                 }
               }
@@ -40246,18 +40298,22 @@ function _meExecReadBitmap(attrs, ctx) {
   // "bitmap-list" on the primary was listing 65+ as though they were in it.
   const priLast = rawPrimary.length * 8;
   const priBits = [...bitSet].filter(b => b <= priLast).length;
-  const pf = _meMakeSyntheticField(attrs.field, priBytes, start, start + baseChunk - 1, ctx,
-    { description: `bitmap (${priBits} DEs set)` });
+  // Inside a "de" entry a short name is the DE's own leaf, as for every other
+  // block there: "SF-BMP" in DE 62's entry is F62.SF-BMP when the DDL declares it.
+  const bmId = (ctx._deScope && _meFindDefById(`${ctx._deScope}.${attrs.field}`, ctx))
+    ? `${ctx._deScope}.${attrs.field}` : attrs.field;
+  const pf = _meMakeSyntheticField(bmId, priBytes, start, start + baseChunk - 1, ctx,
+    { description: `bitmap (${priBits} ${explicitLen !== null && ctx._deScope ? 'subfields' : 'DEs'} set)` });
   pf.bitSet = bitSet;
   pf.bitRange = [1, priLast];
   // Overrides apply here like anywhere else. They never did — a bitmap row was
   // the one field you could not put a display on, which is the row where
   // "bitmap-list" is worth the most. bitSet is set FIRST so the formatter can
   // read the engine's own bits rather than re-deriving them from the hex.
-  _meApplyTypeOverride(pf, { id: attrs.field }, ctx, null);
-  _meApplyDisplayOverride(pf, { id: attrs.field }, ctx);
+  _meApplyTypeOverride(pf, { id: bmId }, ctx, null);
+  _meApplyDisplayOverride(pf, { id: bmId }, ctx);
   ctx.fields.push(pf);
-  ctx.fieldsById[attrs.field] = pf;
+  ctx.fieldsById[bmId] = pf;
 
   // Secondary bitmap, when present, is its OWN row (never merged) — named after
   // the DDL field declared right after the primary (e.g. SBIT-MAP), preserving
@@ -40631,6 +40687,95 @@ function _meAutoLLVarLenId(kids, identifier, groupLeaves) {
 // that may also name the element the bit maps to. Keys are bit numbers, so the
 // DE-to-element relation still comes from the Overrides panel as it always has —
 // this only says how that element's bytes are read.
+// A bitmap inside a DE numbers that DE's SUBFIELDS, not the message's DEs —
+// Visa's DE 62 opens with 8 bytes whose bit 1 is 62.1. Nothing is inferred from
+// the DDL's order: each subfield is mapped by hand in "subfields", and a set bit
+// with no entry ends the walk, because nothing says how long that subfield is
+// and reading on would put every later one at the wrong offset.
+function _meExecSubfieldBits(attrs, bmField, ctx) {
+  const map = attrs.subfields;
+  if (!map || typeof map !== 'object' || Array.isArray(map)) {
+    ctx.fields.push({ id: 'read-bitmap-fields',
+      error: '"subfields" must be an object keyed by subfield number, e.g. {"1": {"field": "AUTH-CHAR-IND"}}' });
+    return;
+  }
+  if (attrs.de !== undefined)
+    ctx.fields.push({ id: 'read-bitmap-fields',
+      error: '"de" is ignored with "subfields" — the bits number this element\'s subfields, not the message\'s DEs' });
+  const parent = ctx._deBit;
+  const label  = n => parent != null ? `${parent}.${n}` : String(n);
+  const bits   = Array.from(bmField.bitSet).sort((a, b) => a - b);
+  const limit  = ctx._deLimit != null ? ctx._deLimit : ctx.bytes.length;
+  _meStep(ctx, `walks ${bits.length} subfield(s) of ${bmField.id} in bit order: ${bits.map(label).join(', ')}`);
+  for (const n of bits) {
+    const mark = ctx.fields.length;
+    try {
+      const raw = map[String(n)];
+      if (raw == null) {
+        ctx.fields.push({ id: bmField.id, error: `Subfield ${label(n)} is set in ${bmField.id} but "subfields" has no entry for it — `
+          + `its length is unknown, so the rest of the element is not read` });
+        break;
+      }
+      if (ctx.cursor >= limit) {
+        ctx.fields.push({ id: bmField.id, error: `Subfield ${label(n)} is set in ${bmField.id}, but the element ended at byte ${limit}` });
+        break;
+      }
+      const ent = Array.isArray(raw) ? { blocks: raw } : (raw && typeof raw === 'object' ? raw : {});
+      const def = ent.field ? _meResolveScopedDef(ent.field, ctx) : null;
+      if (ent.field && !def) {
+        ctx.fields.push({ id: ent.field, error: `Subfield ${label(n)}: "${ent.field}" is not declared in the bound DDL` });
+        break;
+      }
+      if (Array.isArray(ent.blocks) && ent.blocks.length) {
+        _meStep(ctx, `subfield ${label(n)}: read by its own blocks, at ${ctx.cursor}`);
+        _meRunDeEntry(label(n), null, { ...ent, field: def ? def.id : undefined, _blocksRule: true }, ctx);
+        continue;
+      }
+      if (!def) {
+        ctx.fields.push({ id: bmField.id, error: `Subfield ${label(n)}: its entry needs a "field" or "blocks"` });
+        break;
+      }
+      // A leaf is read as declared; a group, leaf by leaf in declaration order.
+      // At the cursor, never at the DDL offset: absent subfields take no room.
+      const leaves = def.isGroup ? _meGroupLeaves(def.id, ctx) : [def];
+      // A group with a length of its own is framed by it, exactly as the DE walk
+      // frames one: a VLG flag in Overrides, else a LEN leaf it recognises by
+      // name. Read at the declared sizes, an LLVAR subfield took its full
+      // capacity and pushed every later one off. Only DIRECT children can be
+      // the group's own length.
+      if (def.isGroup) {
+        const direct = leaves.filter(d => !d.id.slice(def.id.length + 1).includes('.'));
+        const vlg = _meVlgLenMap(_meOvMergedItem(ctx));
+        const lenId = _meVlgHas(vlg, def.id) ? _meVlgGet(vlg, def.id)
+                    : _meAutoLLVarLenId(direct, ctx.vlgIdentifier, leaves.length);
+        if (_meVlgHas(vlg, def.id) || lenId) {
+          _meStep(ctx, `subfield ${label(n)} → group ${def.id} at ${ctx.cursor}: variable length, sized by ${lenId || leaves[0]?.id}`);
+          const rows = _meVlgReadGroup(def.id, leaves, lenId, ctx);
+          for (const r of rows) { ctx.fields.push(r); if (r.id && !r.error) ctx.fieldsById[r.id] = r; }
+          if (rows.some(r => r.error)) break;
+          continue;
+        }
+      }
+      _meStep(ctx, `subfield ${label(n)} → ${def.id} at ${ctx.cursor}`);
+      let short = false;
+      for (const d of leaves) {
+        const f = _meReadOneFieldFromDef({ ...d, offset: undefined }, ctx);
+        if (!f) { short = true; ctx.fields.push({ id: d.id, error: `Subfield ${label(n)}: the message ended before "${d.id}"` }); break; }
+        _meApplyTypeOverride(f, d, ctx, null);
+        _meApplyDisplayOverride(f, d, ctx);
+        ctx.fields.push(f);
+        ctx.fieldsById[d.id] = f;
+      }
+      if (short) break;
+    } finally {
+      // The badge reads it: DE-62.1 rather than DE-62 on every subfield. The
+      // innermost walk stamps first, so a subfield nested in a subfield keeps
+      // its full number.
+      for (let i = mark; i < ctx.fields.length; i++) if (ctx.fields[i].deSub == null) ctx.fields[i].deSub = label(n);
+    }
+  }
+}
+
 function _meDeEntryFor(attrs, de) {
   const map = (attrs && typeof attrs === 'object') ? attrs.de : null;
   if (!map || typeof map !== 'object') return null;
@@ -40710,6 +40855,17 @@ function _meRunDeEntry(de, entry, ovr, ctx) {
     windowLen = N;
     fromWire  = true;
     exact     = true;
+  } else if (scopeId && ovr._blocksRule) {
+    // A subfield read by its own blocks: they say how it is read, whatever they
+    // are, so the engine does not read the group's LEN first — a LEN read here
+    // left the blocks starting on the data, and a read-length-value took the
+    // data's first bytes for a length. What the DDL declares, LEN included, is
+    // only the most the subfield can hold. Asked for 2026-11-14.
+    const leaves = _meGroupLeaves(scopeId, ctx);
+    windowLen = ovr.length != null ? _meResolveLength(ovr.length, ctx)
+              : leaves.length ? leaves.reduce((t, d) => t + (_meEffLen(d, ctx) || 0), 0)
+              : _meDeclaredSize(scopeId, ctx);
+    exact     = ovr.length != null;
   } else if (scopeId) {
     // The DDL declares the length: honour the same VLG configuration the default
     // DE walk uses, so a group is framed identically whether or not it has a
@@ -41094,11 +41250,15 @@ function _meExecBitmapFields(attrs, ctx) {
     ctx.fields.push({ id: 'read-bitmap-fields', error: 'Missing bitmap attribute' });
     return;
   }
-  const bmField = ctx.fieldsById[bitmapId];
+  const bmField = (ctx._deScope && ctx.fieldsById[`${ctx._deScope}.${bitmapId}`]) || ctx.fieldsById[bitmapId];
   if (!bmField?.bitSet) {
     ctx.fields.push({ id: 'read-bitmap-fields', error: `No bitset found for bitmap '${bitmapId}' — run read-bitmap first` });
     return;
   }
+  // Before the block attributes below: those belong to the message's DE walk,
+  // and a subfield walk inside one DE must not reset them for the DEs after it.
+  if (attrs && typeof attrs === 'object' && attrs.subfields !== undefined)
+    return _meExecSubfieldBits(attrs, bmField, ctx);
   // Block attributes first: both of these change what the DE map and the VLG
   // lookup below produce, so nothing may be computed before they are in place.
   // undefined = use the built-in names; "" = auto-detect off. The two must stay
@@ -43542,6 +43702,11 @@ function _genBitmap(attrs, g) {
 }
 function _genBitmapFields(attrs, g) {
   const id = typeof attrs === 'string' ? attrs : attrs?.bitmap;
+  // Not written yet (TODO 26): those bits are one DE's subfields, and walking
+  // them as the message's DEs would write the wrong elements.
+  if (attrs && typeof attrs === 'object' && attrs.subfields !== undefined) {
+    g.problems.push(`read-bitmap-fields "subfields" (${id}): subfields are not generated yet — nothing written for them`); return;
+  }
   const des = g.bitmaps[id];
   if (!des) { g.problems.push(`read-bitmap-fields: no bitmap "${id}" was written before it — skipped`); return; }
   const deMap = _genDeMap(g);
@@ -45688,7 +45853,7 @@ function _meSave() {
               <li><strong>Identity</strong> — type code (up to 5 characters), label, volume and colour</li>
               <li><strong>Recognizers</strong> — the conditions that identify the class (see <em>Detection</em>)</li>
               <li><strong>DDL Bindings</strong> — the DDLs this class is parsed with; the first is the default</li>
-              <li><strong>Parse Spec</strong> — the steps that walk the bytes: fixed reads, bitmaps, tokens, TLV, segments, <code>when</code> conditions and more. <strong>Compact</strong> puts each block on one line and <strong>Expand</strong> gives each attribute its own; the button names what it will do, keeps comments, and ↶ undoes it. It only changes the layout, so it asks for no Save, and every spec opens in the layout chosen last</li>
+              <li><strong>Parse Spec</strong> — the steps that walk the bytes: fixed reads, bitmaps (the message's, and a DE's own that marks its subfields, like Visa DE 62), tokens, TLV, segments, <code>when</code> conditions and more. <strong>Compact</strong> puts each block on one line and <strong>Expand</strong> gives each attribute its own; the button names what it will do, keeps comments, and ↶ undoes it. It only changes the layout, so it asks for no Save, and every spec opens in the layout chosen last</li>
               <li><strong>Business Rules</strong> — what the business requires of a message, such as <em>a network management message must carry DE-70</em>: <em>When</em> some conditions hold, others <em>Must hold</em>. Each parsed message gets a <em>rules</em> badge beside its type — green when every rule that applies passes, amber when some fail, red when all do; click it for what failed. A rule with a <em>Tag name</em> also shows that tag beside the type when it is met; one with only <em>When</em> and a tag just labels the messages it matches, such as <em>RECURRING</em> or <em>REVERSAL</em></li>
               <li><strong>Overrides</strong> — per field: <strong>TYPE</strong> (how the bytes are read), <strong>SHOW</strong> (display only), <strong>SIZE</strong>, <strong>DE</strong> (data-element number) and <strong>VLG</strong> (where a variable length comes from)</li>
               <li><strong>↶ Undo</strong> — removing overrides (one field's or many), a DDL binding, a recognizer or a business rule, clearing the DEs, and deleting a class each leave a notice with <strong>↶ Undo</strong> that puts it back as it was. Deleting a class still asks you to type DELETE first</li>

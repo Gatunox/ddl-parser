@@ -1166,7 +1166,7 @@ user or the host ends it (keepalives only detect a dead link).
 
 ---
 
-## 26. [ ] A bitmap inside a DE — subfields numbered by their own bitmap
+## 26. [~] A bitmap inside a DE — subfields numbered by their own bitmap — *parse done v1.69.1.0*
 
 **Asked for 2026-10-19, parked 2026-10-21.** Some network DEs (Visa's 62 / 63, for
 instance) open with a bitmap of their own, and its bits number the DE's
@@ -1191,6 +1191,20 @@ questions before designing it:
 - how the Field Map shows numbering that is relative to a group.
 
 No network manual is available to design against; work from the user's examples.
+
+**Done (v1.69.1.0) — the parse.** Decided 2026-11-14: `subfields` on
+`read-bitmap-fields`, every subfield **mapped by hand** (the user chose an
+explicit map over declaration order), the map read by `read-bitmap` with
+`length` so bit 1 is data. A set bit with no entry ends the walk. Rows carry
+`deSub` and are badged `DE-62.1`. SPEC §5.14.
+
+**What remains.**
+- **Not verified on a real message.** Built from synthetic cases only; the user
+  has no DE-62 example yet. When one arrives: the DDL fragment and a message in
+  hex, then a regression case from them.
+- **Generate** does not write subfields; `_genBitmapFields` reports them as not
+  written.
+- **Field Map** shows no subfield numbering (the third open question above).
 
 
 ---

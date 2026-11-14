@@ -1208,7 +1208,8 @@ explicit map over declaration order), the map read by `read-bitmap` with
   DE column shows `DE 62.3` from the spec's `subfields` map. If two specs map
   the same field, the binary spec's number wins.
   v1.69.1.6: the number can also be SET there (Data element → number `62.3`);
-  the spec then needs only `"subfields": {}`, plus entries for blocks.
+  it anchors the fields after it (v1.69.1.8), and inside a DE's entry the spec
+  needs no `subfields` at all (v1.69.2.0) — only entries for blocks.
 
 
 ---

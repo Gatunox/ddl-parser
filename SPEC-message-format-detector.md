@@ -799,12 +799,17 @@ the stated width is what keeps bit 1 as data — and `read-bitmap-fields` with
     "3": {"field": "VALID", "blocks": [ … ]}}}}]
 ```
 
-- Every subfield is **mapped by hand**; nothing is taken from the DDL's order.
-  An entry is `{field}`, `[blocks]`, or `{field, blocks}`.
+- A subfield is numbered **in the spec**, bit by bit, or **in Overrides** (below).
+  A spec entry is `{field}`, `[blocks]`, or `{field, blocks}`.
 - **Overrides can number them instead**: Data element → number `62.3` on a field
-  inside DE 62 stores `de: "62.3"`. It moves no DE of the message. With the
-  numbers there, `"subfields": {}` is enough; an entry is written only to read
-  one with blocks, and without `field` it reads the field Overrides numbers. A
+  inside DE 62 stores `de: "62.3"`. It moves no DE of the message. Like a DE
+  anchor, it numbers the fields after it at the same level of the same group —
+  62.4, 62.5 … — until another one re-anchors; REDEFINES and FILLER neither take
+  nor advance a number. On a top-level field nothing follows on. With the
+  numbers there, the spec leaves `subfields` out: inside a DE's entry,
+  `read-bitmap-fields` always reads that DE's subfields — mapping them through
+  the message's DEs read bit 1 as DE 1. An entry is written only to read one
+  with blocks, and without `field` it reads the field Overrides numbers. A
   `field` in the spec wins its bit over Overrides.
 - `{field}` reads the element as declared: a leaf at its size, a group leaf by
   leaf — framed by its own LEN when it has one (a VLG flag, or a LEN leaf

@@ -9257,14 +9257,38 @@ function _meOvDelete(item, fieldId) { delete _meOvAll(item)[_canonFieldId(fieldI
 // fitting. Precedence:
 //   1. an explicit "bytes"          — the user stated the size outright
 //   2. a fixed-width type           — `uint16-be` is TYPE BINARY 16, i.e. 2 bytes
-//   3. the DDL's declared length    — nothing was overridden
+//   3. a BCD type                   — its digits packed two to a byte: the
+//                                      DDL's 9(6) is 3 bytes, 9(3) is 2
+//   4. the DDL's declared length    — nothing was overridden
 // Returns null when the override says nothing about length, so the caller keeps
 // whatever the DDL declared.
-function _meOvEffectiveLen(ovr) {
+function _meOvEffectiveLen(ovr, declaredLen) {
   if (!ovr) return null;
   if (+ovr.bytes > 0) return +ovr.bytes;
   const t = ovr.type ? _meReadTypeByteLen(ovr.type) : null;
-  return t !== null ? t : null;
+  if (t !== null) return t;
+  if (_meBcdPad(ovr.type) && declaredLen > 0) return Math.ceil(declaredLen / 2);
+  return null;
+}
+// A BCD type and where its pad nibble goes when the digits are odd: `bcd` puts
+// a 0 in front, `bcd-f` an F behind. Null for any other type.
+function _meBcdPad(type) {
+  const t = String(type || '').trim().toLowerCase();
+  return t === 'bcd' ? 'L' : t === 'bcd-f' ? 'R' : null;
+}
+// BCD nibbles → the number they hold. `digits` is how many digits the field
+// holds (the DDL's 9(n), or what a length counting digits said); the nibbles
+// beyond them are the pad. Without it, `bcd` keeps every nibble and `bcd-f`
+// drops the trailing F's. Returns { value, bad } — bad when a nibble is not a
+// digit or the pad is not 0 / F, and then value is every nibble as it is.
+function _meBcdDecode(hex, pad, digits) {
+  const h = String(hex || '').toUpperCase();
+  const n = h.length;
+  let D = digits > 0 ? Math.min(digits, n) : pad === 'R' ? h.replace(/F+$/, '').length : n;
+  const body = pad === 'R' ? h.slice(0, D) : h.slice(n - D);
+  const fill = pad === 'R' ? h.slice(D) : h.slice(0, n - D);
+  const ok = /^[0-9]*$/.test(body) && (pad === 'R' ? /^F*$/ : /^0*$/).test(fill);
+  return ok ? { value: body, bad: false } : { value: h, bad: true };
 }
 // Derived views, in the shapes the existing consumers already expect.
 // Only a NUMBER anchors. The same `de` key now also carries the SELECTION forms
@@ -10883,7 +10907,9 @@ function parseMessage(bytes, defs, rawBytes) {
   };
 
   _R['mti'] = (bytes, { offset=0, encoding='ascii', value='####' }) => {
-    if (offset+4 > bytes.length) return false;
+    // BCD packs the four digits into two bytes: 02 00 is "0200".
+    const bcd = encoding === 'bcd';
+    if (offset + (bcd ? 2 : 4) > bytes.length) return false;
     // Valid digit sets per MTI position (ISO 8583)
     const VALID = [
       new Set([0,1,2,9]),         // pos 0: version (0=1987, 1=1993, 2=2003, 9=private)
@@ -10895,7 +10921,10 @@ function parseMessage(bytes, defs, rawBytes) {
     const digits = [];
     for (let i = 0; i < 4; i++) {
       let d;
-      if (encoding === 'ebcdic') {
+      if (bcd) {
+        const b = bytes[offset + (i >> 1)];
+        d = i % 2 ? b & 0xF : b >> 4;   // a nibble over 9 fails the digit sets below
+      } else if (encoding === 'ebcdic') {
         if (bytes[offset+i] < 0xF0 || bytes[offset+i] > 0xF9) return false;
         d = bytes[offset+i] - 0xF0;
       } else {
@@ -17518,6 +17547,10 @@ function _followMti(msg) {
   if (!r) return '';
   const src = msg.wireBytes || msg.bytes || [];
   const off = +r.offset || 0;
+  if (r.encoding === 'bcd') {
+    const h = _meBytesToHex(Array.from(src.slice ? src.slice(off, off + 2) : []));
+    return /^\d{4}$/.test(h) ? h : '';
+  }
   const b = Array.from(src.slice ? src.slice(off, off + 4) : []);
   if (b.length < 4) return '';
   const t = b.map(x => String.fromCharCode(r.encoding === 'ebcdic' ? (_EBCDIC_TO_ASCII[x] ?? x) : x)).join('');
@@ -23739,7 +23772,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.69.3.1';
+const APP_VERSION  = '1.70.0.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -27991,11 +28024,13 @@ const _PS_HELP = {
         ['<code>X</code> · <code>9</code>', 'Text or digits — rendered as characters. The default.'],
         ['<code>BINARY</code>',             'Raw bytes, rendered as a hex dump <code>0x…</code>.'],
       ]],
-      ['encoding', '"ascii" | "ebcdic" | "bcd"', false, [
+      ['encoding', '"ascii" | "ebcdic" | "bcd" | "bcd-f"', false, [
         'How those bytes become characters.',
         ['<code>ascii</code>',  'Printable ASCII, <code>.</code> for anything else. The default.'],
         ['<code>ebcdic</code>', 'Translate EBCDIC → ASCII, for a host-encoded chunk the DDL does not describe.'],
-        ['<code>bcd</code>',    '<b>Not implemented</b> — reported as an error rather than silently ignored.'],
+        ['<code>bcd</code>',    'Packed BCD, a digit per nibble: <code>01 23</code> is 0123. <code>length</code> is in bytes, so every nibble is shown.'],
+        ['<code>bcd-f</code>',  'The same, with an F pad behind dropped: <code>12 3F</code> is 123.'],
+        'A nibble that is not a digit shows every nibble and is reported on the row.',
         '<code>type: "BINARY"</code> wins over any encoding: raw bytes have no character form.',
       ]],
       ['as', 'string', false, [
@@ -30752,7 +30787,7 @@ function _mePsLintWarns(item, parsed, inertOut) {
           const known = /^bcd2$/i.test(p) || _meLenTypeIsInt(p) || _meLenTypeIsHexChar(p)
                      || _meLenTypeIsAscii(p) || _meLenTypeIsEbcdic(p) || _meLenTypeIsHexText(p);
           if (p && !known)
-            warns.push(`[block ${n}] read-length-value "length_encoding": "${p}" is not a length encoding — use one of ${_ME_TYPE_OPTS.filter(Boolean).join(', ')}, or bcd2`);
+            warns.push(`[block ${n}] read-length-value "length_encoding": "${p}" is not a length encoding — use one of ${_ME_TYPE_OPTS.filter(t => t && !_meBcdPad(t)).join(', ')}, or bcd2`);
           if (attrs?.length_size != null && !(Number.isInteger(+attrs.length_size) && +attrs.length_size >= 1 && +attrs.length_size <= 4))
             warns.push(`[block ${n}] read-length-value "length_size" must be 1, 2, 3 or 4, got ${JSON.stringify(attrs.length_size)}`);
           if (p && attrs?.length_size == null && _mePrefixWidth(p, null) == null)
@@ -33451,7 +33486,7 @@ function _meWalkDEFields(defs, item) {
       // can be compared directly. They could not be while a hex-char type
       // silently re-read the declared number as characters.
       const ovr     = _ovAll[_canonFieldId(d.id)];
-      const o       = _meOvEffectiveLen(ovr);
+      const o       = _meOvEffectiveLen(ovr, d.length);
       const written = o !== null ? o : (d.length || 0);
       return eff !== (d.length || 0) || written !== (d.length || 0) || start !== d.offset
         ? { ...d, offset: start, length: eff,
@@ -34785,6 +34820,9 @@ const _FM_HELP = {
       ['hex-ascii-decimal',   'PIC X(4)',       '30304646',         '00FF',                           '255',      'field holds the TEXT "00FF" in ASCII → parsed base-16'],
       ['hex-ascii-decimal',   'PIC X(4)',       '31323334',         '1234',                           '4660',     'ASCII text "1234" parsed base-16 = 0x1234'],
       ['hex-ebcdic-decimal', 'PIC X(2)',  'C6C6',             '[c6][c6]',                       '255',      'same, but the hex text arrives in EBCDIC ("FF")'],
+      ['bcd',           'PIC 9(3)',       '0123',             '[01]#',                          '123',      'packed BCD, 2 bytes for 3 digits — the leading 0 is the pad'],
+      ['bcd',           'PIC 9(6)',       '123456',           '[12]4V',                         '123456',   'an even count has no pad: 3 bytes'],
+      ['bcd-f',         'PIC 9(3)',       '123F',             '[12]?',                          '123',      'the pad is an F behind'],
     ],
     attrs: [
       ['(DDL default)', 'the empty entry', false, [
@@ -34823,6 +34861,15 @@ const _FM_HELP = {
       ['hex-ebcdic-decimal', 'any width', false, [
         'The same, for hex text that arrives in EBCDIC.',
         'The bytes are translated out of EBCDIC first, then read base-16.',
+      ]],
+      ['bcd', 'half the digits', false, [
+        'Packed BCD: two digits a byte, one per nibble. An odd count is padded with a <b>0 in front</b>.',
+        'The field is <b>re-sized</b> to half its declared digits, rounded up — <code>PIC 9(6)</code> is 3 bytes, <code>9(3)</code> is 2 — and the fields after it move with it. A <b>Size</b> override still wins.',
+        'The digits it holds are the DDL\'s — or, when a length counting digits sizes it, what that length says — so the pad nibble is dropped. A nibble that is not a digit shows every nibble and is reported on the row.',
+        'A BCD <b>length</b> in front of a field is read with <code>hex-char</code>, counting digits when it counts digits.',
+      ]],
+      ['bcd-f', 'half the digits', false, [
+        'The same, with the pad an <b>F behind</b>: <code>12 3F</code> is 123.',
       ]],
     ],
   },
@@ -35904,7 +35951,7 @@ function _meOvlDelete(id) {
 // real <select> materializes on click and is torn down on commit. With huge
 // DDLs (thousands of rows) rendering two live selects per row up-front froze
 // the editor open for seconds.
-const _ME_TYPE_OPTS = ['','uint-be','uint-le','binary','ascii','ebcdic','hex-char','hex-ascii-decimal','hex-ebcdic-decimal'];
+const _ME_TYPE_OPTS = ['','uint-be','uint-le','binary','ascii','ebcdic','hex-char','hex-ascii-decimal','hex-ebcdic-decimal','bcd','bcd-f'];
 const _ME_DISP_OPTS = ['','datetime','amount','hex','ascii','ebcdic','gmt-ts','bitmap','bitmap-list','masked'];
 
 // ── Identity Tab ──────────────────────────────────────────────────────────
@@ -37085,7 +37132,7 @@ const _REC_HELP = {
     ],
     attrs: [
       ['offset', 'int', false, ['Where the MTI starts. 0 for a plain ISO message, 3 when an "ISO" text prefix comes first.']],
-      ['encoding', '"ascii" | "ebcdic"', false, ['<code>"ascii"</code> is the default — digits 0x30–0x39. <code>"ebcdic"</code> reads 0xF0–0xF9.']],
+      ['encoding', '"ascii" | "ebcdic" | "bcd"', false, ['<code>"ascii"</code> is the default — digits 0x30–0x39. <code>"ebcdic"</code> reads 0xF0–0xF9. <code>"bcd"</code> reads two bytes, a digit per nibble: <code>02 00</code> is 0200.']],
       ['value', 'string', false, [
         'A 4-character pattern. Defaults to <code>####</code>.',
         ['<code>#</code>', 'Any digit ISO allows in that position.'],
@@ -37122,6 +37169,12 @@ const _REC_HELP = {
         cases: [
           { payload: 'F0 F2 F0 F0', note: '"0200" in EBCDIC' },
           { payload: '30 32 30 30', note: '"0200" in ASCII' },
+        ] },
+      { what: 'In <b>BCD</b> — two bytes, a digit per nibble',
+        rec: { type: 'mti', offset: 0, encoding: 'bcd', value: '####' },
+        cases: [
+          { payload: '02 00', note: '0200' },
+          { payload: '30 32 30 30', note: '"0200" in ASCII — 30 is not a valid version digit 3' },
         ] },
     ],
   },
@@ -37760,7 +37813,7 @@ function _meRecByteLen(r) {
   if (t === 'uint8'  || t === 'byte')  return 1;
   if (t === 'uint16' || t === 'word')  return 2;
   if (t === 'uint32' || t === 'dword') return 4;
-  if (t === 'mti')                     return 4;
+  if (t === 'mti')                     return r.encoding === 'bcd' ? 2 : 4;
   if (t === 'bitmap')                  return r.length || 8;
   if (['binary','ascii','ebcdic','numeric','alphabetic','alphanumeric','regex',
        'hex-density','oct-density'].includes(t)) return r.length != null ? r.length : null;
@@ -37871,7 +37924,7 @@ function _meRecFields(r, id) {
       return nf('value','Max Bytes (legacy ≤)',1,null,1);
     case 'mti': {
       const enc = r.encoding || 'ascii';
-      return offF() + encSel('encoding',['ascii','ebcdic'],enc) + tf('value','MTI Pattern','e.g. 0200');
+      return offF() + encSel('encoding',['ascii','ebcdic','bcd'],enc) + tf('value','MTI Pattern','e.g. 0200');
     }
     case 'bitmap': {
       const bv = String(r.value != null ? r.value : 1);
@@ -38463,7 +38516,7 @@ function _meReadOneFieldFromDef(def, ctx, alsoId) {
   // twice over.
   {
     const _eff   = _meOvEffective(ctx, def.id);
-    const _ovLen = _meOvEffectiveLen(_eff);
+    const _ovLen = _meOvEffectiveLen(_eff, def.length);
     // The number the user wrote, in the type's own units...
     const _want  = _ovLen !== null ? _ovLen : (def.length || 0);
     // ...and what that costs on the wire. Both causes — an explicit "bytes" and
@@ -38488,6 +38541,7 @@ function _meReadOneFieldFromDef(def, ctx, alsoId) {
   // "bytes" override does, counted once per field id so a REDEFINES re-read
   // cannot double-shift.
   let _vlgSized = false;
+  let _wireDigits = null;
   if (ctx.vlgPending != null) {
     // The length frames the whole PAYLOAD, which may be several fields — a group,
     // or a group of groups. It used to be spent on the next field alone, so a LEN
@@ -38497,6 +38551,7 @@ function _meReadOneFieldFromDef(def, ctx, alsoId) {
     // frame ends inside is clamped. Reported 2026-08-19.
     const _capNow = len || 0;
     let _want = null;
+    const _dig = ctx.vlgDigits;
     if (ctx.vlgSpread) {
       // The payload is a GROUP, so the frame covers all of it. A field that fits
       // inside what is left takes its declared width and passes the remainder on;
@@ -38504,13 +38559,18 @@ function _meReadOneFieldFromDef(def, ctx, alsoId) {
       // NOTHING — the frame is the element's whole extent, so a field past its
       // end is one the wire never sent. Leaving the frame behind at that point
       // let the next field read its declared width and push the record along.
-      if (_capNow > 0 && _capNow <= ctx.vlgPending) ctx.vlgPending -= _capNow;
-      else { _want = ctx.vlgPending; ctx.vlgPending = 0; }
+      if (_capNow > 0 && _capNow <= ctx.vlgPending) {
+        ctx.vlgPending -= _capNow;
+        if (_dig != null && _dig < 2 * _capNow) _wireDigits = _dig;
+        if (_dig != null) ctx.vlgDigits = Math.max(0, _dig - 2 * _capNow);
+      }
+      else { _want = ctx.vlgPending; ctx.vlgPending = 0; _wireDigits = _dig; ctx.vlgDigits = null; }
     } else {
       // A frame over a single leaf is that leaf's size, capped at what it
       // declares — the plain "PAN-LEN then PAN" rule.
       _want = ctx.vlgPending;
       ctx.vlgPending = null;
+      _wireDigits = _dig; ctx.vlgDigits = null;
     }
     if (_want !== null) {
     _vlgSized = true;
@@ -38559,6 +38619,16 @@ function _meReadOneFieldFromDef(def, ctx, alsoId) {
     } else if (!/^\d+$/.test(lenPrefix)) {
       _addIssue(`${def.id}: length prefix "${lenPrefix}" is not a number \u2014 read as 0`);
       len = 0;
+    } else if (_meBcdPad(_meOvEffective(ctx, def.id)?.type)) {
+      // BCD data: the prefix counts its digits, packed two to a byte.
+      let _d = parseInt(lenPrefix, 10);
+      const _dMax = def.length || 0;
+      if (_dMax > 0 && _d > _dMax) {
+        _addIssue(`${def.id}: length prefix says ${_d} digit(s), but "${def.id}" declares at most ${_dMax} \u2014 read as ${_dMax}`);
+        _d = _dMax;
+      }
+      _wireDigits = _d;
+      len = Math.ceil(_d / 2);
     } else {
       len = parseInt(lenPrefix, 10);
       if (_max > 0 && len > _max) {
@@ -38616,6 +38686,8 @@ function _meReadOneFieldFromDef(def, ctx, alsoId) {
     }
     ctx.vlgPending = _n;
     ctx.vlgFrame   = _n;   // what the frame was, for a report at its far end
+    // The digits it counted, for a BCD payload whose pad nibble they decide.
+    ctx.vlgDigits  = _inChars ? Math.min(_written, 2 * _n) : null;
   }
 
   const isBin = /\bBINARY\b/i.test(def._dataType || def.dataType || '');
@@ -38646,6 +38718,9 @@ function _meReadOneFieldFromDef(def, ctx, alsoId) {
     unreliable: binUnreliable || undefined,
     maskInRaw:  binUnreliable || undefined,
   };
+  // A BCD payload framed by a length counting digits: how many it holds, so its
+  // pad nibble is told from a digit (19 digits are 10 bytes, one nibble pad).
+  if (_wireDigits != null && _meBcdPad(_meOvEffective(ctx, def.id)?.type)) _f.wireDigits = _wireDigits;
   // A mapped field is read TWICE over the same bytes: once as the DDL declares
   // it, so the span, the cursor and every caller's bookkeeping stay exactly as
   // they were, and once through the mapped definition to produce the rows that
@@ -39051,8 +39126,19 @@ function _meReadTypeByteLen(type) {
 // Re-interpret the raw bytes of a field as the override type. Returns a
 // partial-update object that's merged into the field result. Leaves the field
 // alone for types that don't impose a fixed interpretation.
-function _meReadApplyTypeOverride(f, type, wireHex) {
+function _meReadApplyTypeOverride(f, type, wireHex, digits) {
   const t = String(type).toUpperCase().replace(/\s+/g, ' ').trim();
+  // BCD — the digits packed two to a byte, read from the bytes as transmitted
+  // (an EBCDIC message translates every byte first, and 12 34 would read as
+  // something else). The pad nibble is dropped; a nibble that is not a digit
+  // shows every nibble and says so on the row.
+  const _pad = _meBcdPad(type);
+  if (_pad) {
+    const r = _meBcdDecode(wireHex || f.rawHex || '', _pad, digits);
+    if (!r.bad) return { value: r.value, typeOverride: type };
+    const msg = `${f.id}: "${r.value}" is not BCD${_pad === 'R' ? ' with an F pad' : ''} — a nibble is not a digit, or the pad is not ${_pad === 'R' ? 'F' : '0'}`;
+    return { value: r.value, typeOverride: type, issue: f.issue ? `${f.issue} · ${msg}` : msg };
+  }
   // The field's bytes are whatever was read for it — a "bytes" override has
   // already changed that length upstream, so the type simply interprets what is
   // here. Length first, then type, then display.
@@ -39345,7 +39431,7 @@ function _meApplyTypeOverride(f, def, ctx, inlineType) {
   // The reading the override replaces, kept for the value tooltip and for tag
   // matching — the same three candidates the legacy path preserves.
   const _pre = f.value;
-  Object.assign(f, _meReadApplyTypeOverride(f, typeOverride, _meWireHex(f, ctx)));
+  Object.assign(f, _meReadApplyTypeOverride(f, typeOverride, _meWireHex(f, ctx), f.wireDigits ?? def.length));
   if (f.rawValue === undefined && f.value !== _pre) f.rawValue = _pre;
   _applyTrim();
 }
@@ -40238,10 +40324,9 @@ function _meExecReadFixed(attrs, ctx) {
   const interp = /^BINARY$/i.test(attrs.type || '') ? 'binary'
                : /^ebcdic$/i.test(attrs.encoding || '') ? 'ebcdic'
                : /^ascii$/i.test(attrs.encoding || '')  ? 'ascii'
+               : _meBcdPad(attrs.encoding) ? String(attrs.encoding).trim().toLowerCase()
                : null;
-  if (interp) Object.assign(f, _meReadApplyTypeOverride(f, interp));
-  if (/^bcd$/i.test(attrs.encoding || ''))
-    ctx.fields.push({ id, error: '"encoding": "bcd" is not implemented — use "ascii" or "ebcdic", or read the field with a type override.' });
+  if (interp) Object.assign(f, _meReadApplyTypeOverride(f, interp, _meBcdPad(interp) ? _meWireHex(f, ctx) : undefined));
   ctx.fields.push(f);
   ctx.fieldsById[id] = f;
 }
@@ -40697,7 +40782,7 @@ function _meVlgIsIgnored(getOvr, groupId, leafId) {
 }
 
 function _meWireLen(ovr, declaredLen) {
-  const o = _meOvEffectiveLen(ovr);
+  const o = _meOvEffectiveLen(ovr, declaredLen);
   return o !== null ? o : (declaredLen || 0);
 }
 function _meEffLen(def, ctx) {
@@ -40802,6 +40887,11 @@ function _meDecodeLength(bytes, type, enc) {
   if (!String(type || '').trim() && enc && enc.enc) {
     const asText = _meDecodeLength(bytes, enc.enc === 'ebcdic' ? 'ebcdic' : 'ascii');
     if (asText !== null) return asText;
+  }
+  // A LEN typed BCD: its digits, the pad dropped.
+  if (_meBcdPad(type)) {
+    const r = _meBcdDecode(_meHexSpelling(bytes), _meBcdPad(type), null);
+    return r.bad || !r.value ? null : parseInt(r.value, 10);
   }
   if (_meLenTypeIsHexChar(type)) {
     const hex = _meHexSpelling(bytes);
@@ -41380,6 +41470,8 @@ function _meVlgReadGroup(groupId, kids, cfgLenId, ctx) {
     if (remaining <= 0) break;
     const declared = _meEffLen(childDef, ctx);
     const take     = Math.min(declared, remaining);
+    // The digits left in a length counting digits, for a BCD child it ends in.
+    const cDigits  = lenInChars && Nwritten != null ? Nwritten - 2 * (N - remaining) : null;
     const cStart   = ctx.cursor;
     const cBytes   = Array.from(ctx.bytes.slice(cStart, cStart + take));
     ctx.cursor = cStart + take;
@@ -41397,6 +41489,7 @@ function _meVlgReadGroup(groupId, kids, cfgLenId, ctx) {
       startByte: take > 0 ? cStart : null,
       endByte:   take > 0 ? cStart + take - 1 : null,
     };
+    if (cDigits != null && cDigits < 2 * take && _meBcdPad(_meOvEffective(ctx, childDef.id)?.type)) cf.wireDigits = cDigits;
     _meApplyTypeOverride(cf, childDef, ctx, null);
     _meApplyDisplayOverride(cf, childDef, ctx);
     // The payload of a variable-length element is THE case `map` exists for: the
@@ -41592,7 +41685,7 @@ function _meExecBitmapFields(attrs, ctx) {
             const _um = _meUnmappedRow(_meFrameOwner(entry, de), _frameEnd, ctx);
             if (_um) ctx.fields.push(_um);
           }
-          ctx.vlgPending = null; ctx.vlgFrame = null; ctx.vlgSpread = false;
+          ctx.vlgPending = null; ctx.vlgFrame = null; ctx.vlgSpread = false; ctx.vlgDigits = null;
           _meEmitRedefRows(entry, ctx);
         }
         continue;
@@ -43357,6 +43450,7 @@ function _genOnce(item, o, flips) {
     || (r.type === 'literal' || r.type === 'mti') && r.value != null && /^[^?*]+$/.test(recVal(r))))
     .map(r => ({ off: +r.offset, bytes: r.type === 'literal' && r.encoding === 'hex'
       ? (recVal(r).replace(/\s+/g, '').match(/../g) || []).map(h => parseInt(h, 16))
+      : r.type === 'mti' && r.encoding === 'bcd' ? (recVal(r).match(/../g) || []).map(h => parseInt(h, 16))
       : _genText(r.type === 'numeric' ? '0'.repeat(Math.max(1, +r.length || 1)) : recVal(r), r.encoding === 'ebcdic' ? 'ebcdic' : 'ascii') }));
   const spec = _genSpec(item, o.format === 'ascii');
   g.segSpec = spec.some(b => b && typeof b === 'object' && 'read-segment-fields' in b);
@@ -43492,6 +43586,7 @@ function _genBlock(type, attrs, g) {
 function _genKind(def, g) {
   if (g?.segFile?.def.id === def.id) return 'hex';
   const t = String(def._genType || _meOvEffective(g, def.id)?.type || '').trim();
+  if (_meBcdPad(t)) return 'bcd';
   if (t) return /^(uint|binary\s*\d|byte$|word$|dword$)/i.test(t) ? 'int' : /^hex-char$/i.test(t) ? 'hex' : 'text';
   const dt = String(def._dataType || '');
   if (!dt && def.dataType) {
@@ -43504,8 +43599,18 @@ function _genKind(def, g) {
   return /PIC\s*S?9/i.test(dt) && !/[XA]/i.test(dt.replace(/^PIC/i, '')) ? 'num' : 'text';
 }
 // One field's bytes for `value` at `len`; the value as the parser will show it.
-function _genEncode(def, value, len, g) {
+// BCD: `digits` digits in `len` bytes, the rest of the nibbles the pad — a 0
+// in front for bcd, an F behind for bcd-f.
+function _genBcdBytes(value, len, digits, pad) {
+  const D = Math.min(Math.max(0, digits), 2 * len);
+  const s = D ? String(value ?? '').replace(/\D/g, '').padStart(D, '0').slice(-D) : '';
+  const fill = (pad === 'R' ? 'F' : '0').repeat(2 * len - D);
+  const h = pad === 'R' ? s + fill : fill + s;
+  return { bytes: (h.match(/../g) || []).map(x => parseInt(x, 16)), shown: s };
+}
+function _genEncode(def, value, len, g, digits) {
   const kind = _genKind(def, g);
+  if (kind === 'bcd') return _genBcdBytes(value, len, digits ?? Math.min(def.length || 2 * len, 2 * len), _meBcdPad(def._genType || _meOvEffective(g, def.id)?.type));
   if (kind === 'int') {
     let n; try { n = BigInt(String(value ?? '0').trim() || '0'); } catch (e) { n = BigInt(0); }
     const out = [];
@@ -43529,12 +43634,13 @@ function _genDefault(def, g) {
   if (g.segFile?.def.id === def.id) return g.segFile.dflt;
   const kind = _genKind(def, g), len = _meEffLen(def, g) || 0;
   if (kind === 'int') return '0';
+  if (kind === 'bcd') return '0'.repeat(Math.min(def.length || 2 * len, 2 * len));
   if (kind === 'hex') return '00'.repeat(len);
   return (kind === 'num' ? '0' : 'X').repeat(len);
 }
 // Write one field at `pos`, `len` bytes (its effective width when absent).
 // With no value given, the part of each recognizer that falls inside it wins.
-function _genField(def, pos, g, len) {
+function _genField(def, pos, g, len, digits) {
   const L = len ?? _meEffLen(def, g);
   _genMapRaw(def, g);
   if (g.raw[def.id]) return _genRawField(def, pos, g, L);
@@ -43542,6 +43648,16 @@ function _genField(def, pos, g, len) {
   // An ISO LLVAR / LLLVAR carries its own length: digits, then that many bytes,
   // the declared size being the most it may hold.
   const pw = def.type === 'LLVAR' ? 2 : def.type === 'LLLVAR' ? 3 : 0;
+  if (pw && _genKind(def, g) === 'bcd') {
+    // BCD data: the prefix counts its digits, packed two to a byte.
+    const v = String(given ? g.values[def.id] : _genDefault(def, g)).replace(/\D/g, '').slice(0, def.length || undefined);
+    const enc = _genEncode(def, v, Math.ceil(v.length / 2), g, v.length);
+    _genPut(g, pos, _genText(String(v.length).padStart(pw, '0'), g.enc).concat(enc.bytes));
+    g.spans[def.id] = [pos, pw + enc.bytes.length];
+    g.written[def.id] = enc.shown;
+    g.hexOf[def.id] = _meBytesToHex(enc.bytes);
+    return;
+  }
   if (pw) {
     const v = String(given ? g.values[def.id] : _genDefault(def, g)).slice(0, L);
     const data = _genText(v, g.enc);
@@ -43551,10 +43667,12 @@ function _genField(def, pos, g, len) {
     g.hexOf[def.id] = _meBytesToHex(data);
     return;
   }
-  let { bytes, shown } = _genEncode(def, given ? g.values[def.id] : _genDefault(def, g), L, g);
+  let { bytes, shown } = _genEncode(def, given ? g.values[def.id] : _genDefault(def, g), L, g, digits);
   if (!given && _genRecsOver(g, pos, bytes.length)) {
     bytes = _genRecsOn(g, pos, bytes);
-    if (_genKind(def, g) !== 'int') shown = bytes.map(x => String.fromCharCode(g.enc === 'ebcdic' ? (_EBCDIC_TO_ASCII[x] ?? x) : x)).join('');
+    const k = _genKind(def, g);
+    if (k === 'bcd') shown = _meBcdDecode(_meBytesToHex(bytes), _meBcdPad(_meOvEffective(g, def.id)?.type), digits ?? def.length).value;
+    else if (k !== 'int') shown = bytes.map(x => String.fromCharCode(g.enc === 'ebcdic' ? (_EBCDIC_TO_ASCII[x] ?? x) : x)).join('');
   }
   _genPut(g, pos, bytes);
   g.spans[def.id] = [pos, bytes.length];
@@ -43568,21 +43686,28 @@ function _genFramed(before, lenDef, data, g) {
   for (const d of before) _genField(d, g.cursor, g);
   const lenPos = g.cursor, lenLen = _meEffLen(lenDef, g);
   _genPut(g, lenPos, new Array(lenLen).fill(0));
-  let total = 0;
+  let total = 0, nibbles = 0;
   data.forEach((d, i) => {
     const declared = _meEffLen(d, g);
     const given = Object.prototype.hasOwnProperty.call(g.values, d.id);
     _genMapRaw(d, g);
     const v = g.raw[d.id] ? { length: g.raw[d.id].bytes.length } : String(given ? g.values[d.id] : _genDefault(d, g));
     const last = i === data.length - 1;
-    const w = last && g.raw[d.id] ? Math.min(declared, v.length) : last && _genKind(d, g) !== 'int' ? Math.min(declared, Math.max(_genKind(d, g) === 'hex' ? Math.ceil(v.length / 2) : v.length, 0)) : declared;
-    _genField(d, g.cursor, g, w);
+    // A BCD payload at its end: its digits, two to a byte — and a length that
+    // counts digits says how many, odd or not.
+    const bcdLast = last && !g.raw[d.id] && _genKind(d, g) === 'bcd';
+    const vd = bcdLast ? Math.min(v.replace(/\D/g, '').length, d.length || Infinity) : 0;
+    const w = bcdLast ? Math.min(declared, Math.ceil(vd / 2)) : last && g.raw[d.id] ? Math.min(declared, v.length) : last && _genKind(d, g) !== 'int' ? Math.min(declared, Math.max(_genKind(d, g) === 'hex' ? Math.ceil(v.length / 2) : v.length, 0)) : declared;
+    _genField(d, g.cursor, g, w, bcdLast ? Math.min(vd, 2 * w) : undefined);
     total += w;
+    nibbles += bcdLast ? Math.min(vd, 2 * w) : 2 * w;
   });
   const end = g.cursor;
-  const n = _meVlgCountsDigits(_meOvEffective(g, lenDef.id)) ? total * 2 : total;
+  const n = _meVlgCountsDigits(_meOvEffective(g, lenDef.id)) ? nibbles : total;
   const lk = _genKind(lenDef, g);
-  const shown = lk === 'int' ? String(n) : String(n).padStart(lenLen, '0').slice(-lenLen);
+  // A hex-char or BCD length spells its number in nibbles, two to a byte.
+  const lw = lk === 'hex' || lk === 'bcd' ? 2 * lenLen : lenLen;
+  const shown = lk === 'int' ? String(n) : String(n).padStart(lw, '0').slice(-lw);
   const enc = _genEncode(lenDef, shown, lenLen, g);
   _genPut(g, lenPos, enc.bytes);
   g.spans[lenDef.id] = [lenPos, enc.bytes.length];
@@ -43850,7 +43975,17 @@ function _genReadFixed(attrs, g) {
   if (n != null && typeof n !== 'number') return _genReadFixedRef({ ...attrs, as: id }, g);
   if (!Number.isInteger(n) || n < 0) { g.problems.push(`read-fixed ${id}: ${JSON.stringify(n)} is not a length — skipped`); return; }
   const e = String(attrs.encoding || '').toLowerCase();
-  if (e === 'bcd') { g.problems.push(`read-fixed ${id}: "encoding": "bcd" is not implemented in the parse — skipped`); return; }
+  if (_meBcdPad(e)) {
+    // Every nibble is the value's: read-fixed's length is bytes, so a bcd-f
+    // value shorter than them is padded with F's, a bcd one with leading 0's.
+    const v = String(Object.prototype.hasOwnProperty.call(g.values, id) ? g.values[id] : '0'.repeat(2 * n)).replace(/\D/g, '').slice(0, 2 * n);
+    const r = _genBcdBytes(v, n, _meBcdPad(e) === 'R' ? v.length : 2 * n, _meBcdPad(e));
+    _genPut(g, g.cursor, r.bytes);
+    g.spans[id] = [g.cursor, n];
+    g.written[id] = _meBcdPad(e) === 'R' ? r.shown : r.shown.padStart(2 * n, '0');
+    g.hexOf[id] = _meBytesToHex(r.bytes);
+    return;
+  }
   // A field the DDL declares keeps its type — and so its default — unless the block states one.
   const ddl = !attrs.type && _genDefs(g).find(d => d.id === id);
   const def = { ...(ddl ? { ...ddl, offset: undefined } : { _dataType: /^(uint|binary)/i.test(attrs.type || '') ? 'BINARY' : 'PIC X' }),
@@ -44477,7 +44612,9 @@ let _genSt = null;
 // A row: the field, its width and kind, its default, and the DDL type to show.
 function _genLeaf(d, g, dflt) {
   const pw = d.type === 'LLVAR' ? 'LL' : d.type === 'LLLVAR' ? 'LLL' : '';
-  return { id: d.id, len: _meEffLen(d, g) || 0, kind: pw ? (_genKind(d, g) === 'num' ? 'num' : 'text') : _genKind(d, g),
+  // A BCD field is digits to the dialog: as many as it holds, not its bytes.
+  const bcd = _genKind(d, g) === 'bcd';
+  return { id: d.id, len: bcd ? d.length || 2 * (_meEffLen(d, g) || 0) : _meEffLen(d, g) || 0, kind: bcd ? 'num' : pw ? (_genKind(d, g) === 'num' ? 'num' : 'text') : _genKind(d, g),
     pic: (pw ? pw + ' ' : '') + (d._dataType ? String(d._dataType).replace(/^PIC\s*/i, '') : d.dataType ? `${d.dataType} ${d.length}` : ''),
     desc: d.description && d.description !== d.id && d.description !== String(d.id).split('.').pop() ? d.description : '',
     dflt: dflt ?? (_genKind(d, g) === 'int' ? '0' : String(_genEncode(d, _genDefault(d, g), _meEffLen(d, g), g).shown)) };

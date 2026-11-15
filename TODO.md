@@ -1348,6 +1348,37 @@ Also: concrete help examples for `map`, including a full path
 
 ---
 
+## 33. [ ] Bit fields inside a byte
+
+**Found 2026-11-14, comparing with other parsers** (Kaitai `b1`/`b4`, Construct
+`BitStruct`). The smallest unit a spec reads is a byte; only bitmaps look at
+bits. A byte of flags (or a nibble-wide code) cannot be split into named
+fields. Wait for a real message that needs it before designing.
+
+---
+
+## 35. [ ] BCD inside a `de` entry framed by a `length_prefix` counting digits
+
+**Found 2026-11-14, building BCD.** A BCD field is read by its digits when a
+DDL length sizes it (a VLG group, a LEN marked as a length source, an ISO
+LLVAR prefix). Inside a `de` entry whose `length_prefix` counts digits it is
+not: a `read` of the field takes its full BCD width, past the window (the same
+contract a `PIC X` has there), and the digit count never reaches it, so an odd
+count's pad nibble reads as a digit. Generate writes the even count. Fix when a
+real message frames a BCD DE that way rather than with a DDL LEN.
+
+---
+
+## 34. [ ] Checksum / CRC / MAC verification
+
+**Found 2026-11-14, same comparison** (Construct `Checksum`, 010 Editor). No
+block computes or checks a checksum, CRC or MAC over a range of the message,
+and Generate cannot write one. Design when a format that carries one comes up:
+which algorithms, the range it covers, and whether a mismatch is an error or a
+warning.
+
+---
+
 ## Usability / UI backlog
 
 - [x] **Flag specs with missing configuration** — *done v1.1.2.373 / .376 / .377*.
@@ -1363,8 +1394,8 @@ Also: concrete help examples for `map`, including a full path
       the issue bar counts errors and warnings and walks to each row. Was: error
       rows interleaved with data rows. Reuse the DDL editor's validation-bar
       pattern (`◀ 1/N ▶` + message), which already exists and works well.
-- [ ] Field preview in the DDL picker — currently you choose on score alone.
-      Matters more now that a pick can *fill a spec's missing binding*.
+- [x] Field preview in the DDL picker — *done v1.68.0.0*: the candidate under
+      the pointer (or ↑ ↓) previews the first fields it reads from the message.
 - [x] Make the Data Editor **Test** panel more prominent when authoring a spec —
       *closed 2026-10-10, already true.* It is no longer a collapsed bar at the
       bottom: it is a subpanel under the class list, open by default, resizable,

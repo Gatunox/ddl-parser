@@ -178,7 +178,7 @@ and the old names still evaluate, so existing specs keep working.
 
 | Type | What it checks | Key attributes |
 |------|---------------|----------------|
-| `mti` | 4-byte MTI is structurally valid per ISO 8583 (version / class / function / origin digit sets) | `offset`, `encoding` (`ascii`\|`ebcdic`), `value` — 4-char pattern, `#` = any digit (default `####`) |
+| `mti` | 4-digit MTI is structurally valid per ISO 8583 (version / class / function / origin digit sets) — 4 bytes, or 2 in BCD | `offset`, `encoding` (`ascii`\|`ebcdic`\|`bcd`), `value` — 4-char pattern, `#` = any digit (default `####`) |
 | `bitmap` | 8 or 16 bytes form a plausible bitmap | `offset`, `encoding` (`binary`\|`ascii-hex`\|`ebcdic`), `length` (`8`\|`16`) |
 
 #### Text / pattern
@@ -361,7 +361,7 @@ render the same bytes differently.
 | `type`     | `BINARY`    | Raw bytes, rendered as a hex dump. Wins over any `encoding`. |
 | `encoding` | `ascii`     | Printable ASCII, `.` for anything else. The default. |
 | `encoding` | `ebcdic`    | Translated EBCDIC → ASCII. |
-| `encoding` | `bcd`       | **Not implemented** — reported as an error row rather than silently ignored. |
+| `encoding` | `bcd` \| `bcd-f` | Packed BCD, two digits a byte — read as the Type column's `bcd` / `bcd-f` (§9): `bcd` shows every nibble, `bcd-f` drops a trailing F pad. A nibble that is not a digit shows every nibble and is reported on the row. |
 
 ### 5.5 `read-until` — multiple stop conditions
 
@@ -1819,7 +1819,8 @@ that field at parse time.
 |---|---|
 | 1. `bytes` | the size stated outright |
 | 2. a fixed-width `type` | `uint16-be` *is* `TYPE BINARY 16`, so 2 bytes |
-| 3. the DDL's declared length | nothing was overridden |
+| 3. a BCD `type` | half the DDL's digits, rounded up: `9(6)` is 3 bytes, `9(3)` is 2 |
+| 4. the DDL's declared length | nothing was overridden |
 
 The field is read at that length, and **every field declared after it shifts by
 the difference** — shrink a 4-byte `MSGTYPE` to 2 and the two bytes that frees
@@ -1857,6 +1858,17 @@ the Len column reads `4 ↩ 2`, declared then in effect.
 | `hex-char` | Raw bytes → their hex characters — TAL `binary^hexchar`, so `00 13` reads as `"0013"` |
 | `hex-ascii-decimal` | Hex digits held as **ASCII text** → integer: `30 30 46 46` (`"00FF"`) → `255` |
 | `hex-ebcdic-decimal` | Hex digits held as **EBCDIC text** → integer: `F0 F0 C6 C6` → `255` |
+| `bcd` | Packed BCD, two digits a byte, an odd count padded with a **0 in front**: `PIC 9(3)` holding `01 23` reads `"123"` |
+| `bcd-f` | The same, padded with an **F behind**: `12 3F` reads `"123"` |
+
+**BCD.** The digits are read from the bytes as transmitted, so an EBCDIC message
+reads them too. How many digits the field holds is the DDL's `9(n)` — or, when a
+length counting digits (`"count": "digits"`) sizes it, what that length says; the
+nibbles beyond them are the pad and are dropped. A nibble that is not a digit, or
+a pad that is not `0` / `F`, shows every nibble and is reported on the row. A LEN
+typed BCD reads as its number. An ISO `LLVAR` / `LLLVAR` keeps its ASCII prefix,
+which then counts digits: `16` is 8 bytes. A BCD **length** in front of a field is read with `hex-char`
+(and `"count": "digits"` when it counts digits) — no separate name.
 
 The names `hex-ascii` and `hex-ebcdic` are not accepted; write the `-decimal` forms.
 

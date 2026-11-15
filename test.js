@@ -2573,6 +2573,11 @@ const RECOGNIZER_CASES = [
   ['mti exact',                      { type: 'mti', offset: 0, value: '0200' }, '30 32 30 30', true],
   ['mti family pattern',             { type: 'mti', offset: 0, value: '01##' }, '30 31 31 30', true],
   ['mti family rejects other class', { type: 'mti', offset: 0, value: '01##' }, '30 32 30 30', false],
+  // BCD: two bytes, a digit per nibble
+  ['mti bcd',                        { type: 'mti', offset: 0, value: '0200', encoding: 'bcd' }, '02 00', true],
+  ['mti bcd rules apply',            { type: 'mti', offset: 0, value: '####', encoding: 'bcd' }, '00 00', false],
+  ['mti bcd rejects a hex nibble',   { type: 'mti', offset: 0, value: '####', encoding: 'bcd' }, '02 0A', false],
+  ['mti bcd needs only two bytes',   { type: 'mti', offset: 0, value: '0110', encoding: 'bcd' }, '01 10', true],
   ['mti at an offset',               { type: 'mti', offset: 3, value: '####' }, '49 53 4F 30 32 30 30', true],
   ['mti ebcdic',                     { type: 'mti', offset: 0, encoding: 'ebcdic', value: '####' }, 'F0 F2 F0 F0', true],
   ['mti truncated',                  { type: 'mti', offset: 0, value: '####' }, '30 32 30', false],
@@ -6538,10 +6543,12 @@ test('every override the panel offers reaches a tag', () => {
   // hex digits written as TEXT, so 00 00 00 01 is not a case they accept and
   // testing them with it proves nothing about the path.
   const BYTES = { 'hex-ascii-decimal': '30304646',    // ASCII  "00FF"
-                  'hex-ebcdic-decimal': 'F0F0C6C6' }; // EBCDIC "00FF"
+                  'hex-ebcdic-decimal': 'F0F0C6C6',   // EBCDIC "00FF"
+                  'bcd-f': '1234567F' };              // 7 digits, F pad
   const WANT = { 'uint-be': '1', 'uint-le': '16777216', 'binary': '0x00000001',
                  'ascii': '....', 'ebcdic': '....', 'hex-char': '00000001',
-                 'hex-ascii-decimal': '255', 'hex-ebcdic-decimal': '255' };
+                 'hex-ascii-decimal': '255', 'hex-ebcdic-decimal': '255',
+                 'bcd': '00000001', 'bcd-f': '1234567' };
   for (const t of TYPES) {
     const m = mk(BYTES[t] || '00000001');
     applyOvr(m, { name: 'S', overrides: { F: { type: t } } });
@@ -26239,6 +26246,153 @@ console.log('\ngenerate a message');
     const r = gen(subItem(rbf, 'hex', 16), { des: [2, 3], subs: ['2.1', '2.3'], values: { 'F62.VALID.DATA': 'XYZ' } });
     deepEq(clean(r), [], 'the message did not round-trip');
     eq(String.fromCharCode(...r.out.slice(12, 28)), 'A000000000000000', 'the hex bitmap does not mark 2.1 and 2.3');
+  }));
+
+  // BCD (asked 2026-11-14): the MTI, the numeric DEs and a length counting
+  // digits, packed two to a byte, with the pad nibble the user chose per field.
+  const BCD_DDL = 'DEFINITION BCDMSG.\n  02 TYP PIC 9(4).\n  02 PBIT-MAP PIC X(8).\n  02 SBIT-MAP PIC X(8).\n'
+    + '  02 DE-2.\n    04 DE-2-LEN PIC 9(2).\n    04 PAN PIC 9(19).\n  02 DE-3 PIC 9(6).\n  02 DE-4 PIC 9(3).\n  02 DE-5 PIC X(2).\nEND\n'
+    + 'DEFINITION LEAFMSG.\n  02 PLEN PIC 9(2).\n  02 PAN PIC 9(19).\n  02 TAIL PIC X(2).\nEND\n';
+  const withBcd = fn => {
+    const saved = run('({ t: S.ddlTree })');
+    sandbox.__bcd = BCD_DDL;
+    run('S.ddlTree = { BASE: { DDL: { BCD: __bcd } } }; _ddlTreeVersion++;');
+    try { return fn(); } finally { sandbox.__saved = saved; run('S.ddlTree = __saved.t; _ddlTreeVersion++;'); }
+  };
+  const bcdItem = (ov = {}) => ({ name: 'BCD', label: 'BCD', ddl_bindings: ['BASE/DDL/BCD/BCDMSG'],
+    overrides: { TYP: { type: 'bcd' }, 'DE-2.DE-2-LEN': { type: 'hex-char', bytes: 1, count: 'digits' },
+      'DE-2.PAN': { type: 'bcd' }, 'DE-3': { type: 'bcd' }, 'DE-4': { type: 'bcd-f' }, ...ov },
+    recognizers: [{ type: 'mti', offset: 0, value: '0200', encoding: 'bcd' }],
+    parse_spec_binary: [{ read: 'TYP' }, { 'read-bitmap': { field: 'PBIT-MAP', encoding: 'binary' } }, { 'read-bitmap-fields': 'PBIT-MAP' }] });
+  const parseHex = (item, hex) => {
+    sandbox.__item = item; sandbox.__b = hex.replace(/\s+/g, '').match(/../g).map(h => parseInt(h, 16));
+    return JSON.parse(run(`JSON.stringify(_meParseFileWithSpec(__item, __b, { format: 'hex', rawBytes: __b }).fields
+      .map(f => ({ id: f.id, value: f.value, issue: f.issue, error: f.error, startByte: f.startByte, endByte: f.endByte })))`));
+  };
+  const _hex = a => a.map(b => b.toString(16).padStart(2, '0')).join('').toUpperCase();
+  const byId = (fs, id) => fs.find(f => f.id === id) || {};
+  const probs = fs => fs.filter(f => f.issue || f.error).map(f => `${f.id}: ${f.issue || f.error}`);
+
+  test('[REGRESSION] bcd: the MTI, a digit-counted PAN, and fixed DEs read as their digits, the pad dropped', () => withBcd(() => {
+    // 0200 · bitmap DE 2,3,4 · LEN 16 digits · PAN · 123456 · 789 + F pad
+    const fs = parseHex(bcdItem(), '0200 7000000000000000 16 4111111111111111 123456 789F');
+    deepEq(probs(fs), [], 'the BCD message reports problems');
+    eq(byId(fs, 'TYP').value, '0200', 'the MTI is not read as BCD');
+    eq(byId(fs, 'TYP').endByte, 1, 'a BCD 9(4) is not 2 bytes');
+    eq(byId(fs, 'DE-2.PAN').value, '4111111111111111', 'the PAN is not its 16 digits');
+    eq(byId(fs, 'DE-3').value, '123456', 'a BCD 9(6) is not 3 bytes of digits');
+    eq(byId(fs, 'DE-4').value, '789', 'bcd-f does not drop the F pad');
+    // An odd PAN: 15 digits in 8 bytes, the leading 0 is the pad.
+    const odd = parseHex(bcdItem(), '0200 7000000000000000 15 0411111111111111 123456 789F');
+    deepEq(probs(odd), [], 'the odd PAN reports problems');
+    eq(byId(odd, 'DE-2.PAN').value, '411111111111111', 'the length\'s digit count does not decide the pad');
+    eq(byId(odd, 'DE-3').value, '123456', 'the field after an odd PAN does not start on the right byte');
+  }));
+
+  test('[REGRESSION] bcd: a nibble that is not a digit, or a wrong pad, is reported and every nibble shown', () => withBcd(() => {
+    const fs = parseHex(bcdItem(), '0200 3000000000000000 12345A 1239');
+    eq(byId(fs, 'DE-3').value, '12345A', 'a bad BCD value does not show every nibble');
+    assert.ok(/is not BCD/.test(byId(fs, 'DE-3').issue || ''), 'a nibble that is not a digit is not reported');
+    eq(byId(fs, 'DE-4').value, '1239', 'a bcd-f whose pad is a digit does not show every nibble');
+    assert.ok(/is not BCD with an F pad/.test(byId(fs, 'DE-4').issue || ''), 'a 9 where the F pad goes is not reported');
+    const pad = parseHex(bcdItem({ 'DE-4': { type: 'bcd' } }), '0200 1000000000000000 5123');
+    assert.ok(/pad is not 0/.test(byId(pad, 'DE-4').issue || ''), 'a bcd whose leading pad is not 0 is not reported');
+  }));
+
+  test('[REGRESSION] bcd: a Size override wins over the BCD width, and EBCDIC reads the wire bytes', () => withBcd(() => {
+    const fs = parseHex(bcdItem({ 'DE-3': { type: 'bcd', bytes: 4 } }), '0200 2000000000000000 00123456');
+    deepEq(probs(fs), [], 'a sized BCD field reports problems');
+    eq(byId(fs, 'DE-3').value, '123456', 'a Size override does not keep the DDL digits, the extra nibbles the pad');
+    sandbox.__item = bcdItem(); sandbox.__b = [0x02, 0x00, 0x20, 0, 0, 0, 0, 0, 0, 0, 0x12, 0x34, 0x56];
+    const eb = JSON.parse(run(`JSON.stringify(_meParseFileWithSpec(__item, __b.map(b => _EBCDIC_TO_ASCII[b] ?? b), { format: 'ebcdic', rawBytes: __b }).fields.find(f => f.id === 'DE-3'))`));
+    eq(eb.value, '123456', 'an EBCDIC message reads BCD from the translated bytes, not the wire');
+    eq(eb.issue, undefined, 'a BCD field on an EBCDIC message is reported');
+  }));
+
+  test('[REGRESSION] bcd: read-fixed reads "encoding": "bcd" and "bcd-f"', () => withBcd(() => {
+    const item = { name: 'RF', label: 'RF', ddl_bindings: ['BASE/DDL/BCD/BCDMSG'], parse_spec_binary: [
+      { 'read-fixed': { length: 2, as: 'A', encoding: 'bcd' } }, { 'read-fixed': { length: 2, as: 'B', encoding: 'bcd-f' } }] };
+    const fs = parseHex(item, '0123 123F');
+    deepEq(probs(fs), [], 'read-fixed bcd reports problems');
+    eq(byId(fs, 'A').value, '0123', 'read-fixed bcd does not show every nibble');
+    eq(byId(fs, 'B').value, '123', 'read-fixed bcd-f does not drop the F pad');
+    const r = gen(item, { values: { A: '42', B: '123' } });
+    deepEq(clean(r), [], 'read-fixed bcd does not round-trip');
+    deepEq(r.out, [0x00, 0x42, 0x12, 0x3F], 'read-fixed bcd is not written as BCD');
+    // On an EBCDIC message the digits are the wire's, not the translated bytes.
+    sandbox.__item = item; sandbox.__b = [0x12, 0x34, 0x56, 0x7F];
+    const eb = JSON.parse(run(`JSON.stringify(_meParseFileWithSpec(__item, __b.map(b => _EBCDIC_TO_ASCII[b] ?? b), { format: 'ebcdic', rawBytes: __b }).fields.map(f => f.value))`));
+    deepEq(eb, ['1234', '567'], 'read-fixed bcd on an EBCDIC message does not read the wire bytes');
+  }));
+
+  test('[REGRESSION] bcd: a LEN typed BCD reads its number, and an ISO LLVAR prefix counts BCD digits', () => withBcd(() => {
+    const fs = parseHex(bcdItem({ 'DE-2.DE-2-LEN': { type: 'bcd', count: 'digits' } }), '0200 4000000000000000 15 0411111111111111');
+    deepEq(probs(fs), [], 'a BCD LEN reports problems');
+    eq(byId(fs, 'DE-2.PAN').value, '411111111111111', 'a BCD LEN does not frame the PAN');
+    // An ISO LLVAR keeps its ASCII prefix; for BCD data it counts digits: 15 is 8 bytes.
+    const ll = JSON.parse(run(`(() => { const b = [0x31, 0x35, 0x04, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x99];
+      const ctx = { bytes: b, cursor: 0, fields: [], fieldsById: {}, item: { overrides: { L2: { type: 'bcd' } } } };
+      const def = { id: 'L2', type: 'LLVAR', length: 19, description: 'L2' };
+      const f = _meReadOneFieldFromDef(def, ctx); _meApplyTypeOverride(f, def, ctx, null);
+      return JSON.stringify({ value: f.value, issue: f.issue, end: f.endByte, cursor: ctx.cursor }); })()`));
+    eq(ll.value, '411111111111111', 'an LLVAR of BCD digits is not read as them');
+    eq(ll.cursor, 10, 'an LLVAR prefix of BCD digits does not count digits');
+    eq(ll.issue, undefined, 'an LLVAR of BCD digits is reported');
+    // And Generate writes one: the digit count, then the digits packed.
+    const gl = JSON.parse(run(`(() => { const g = { values: { L2: '411111111111111' }, raw: {}, maps: {}, out: [], spans: {}, written: {}, hexOf: {},
+      recs: [], enc: 'ascii', item: { overrides: { L2: { type: 'bcd' } } } };
+      _genField({ id: 'L2', type: 'LLVAR', length: 19 }, 0, g);
+      return JSON.stringify({ out: g.out, w: g.written.L2 }); })()`));
+    eq(_hex(gl.out), '3135' + '0411111111111111', 'Generate does not write an LLVAR of BCD digits as the parse reads it');
+    eq(gl.w, '411111111111111', 'Generate does not show the LLVAR\'s digits');
+    // With no value given, the default is every digit the field holds.
+    const gd = JSON.parse(run(`(() => { const g = { values: {}, raw: {}, maps: {}, out: [], spans: {}, written: {}, hexOf: {},
+      recs: [], enc: 'ascii', item: { overrides: { L2: { type: 'bcd' } } } };
+      _genField({ id: 'L2', type: 'LLVAR', length: 19 }, 0, g);
+      return JSON.stringify(g.written.L2); })()`));
+    eq(gd, '0'.repeat(19), 'a BCD field\'s default is not all its digits');
+  }));
+
+  test('[REGRESSION] bcd: an MTI recognizer in BCD is 2 bytes wide, Follow reads it, the editor offers it', () => {
+    eq(run(`_meRecByteLen({ type: 'mti', encoding: 'bcd' })`), 2, 'a BCD MTI is not 2 bytes wide');
+    const opts = run('_ME_TYPE_OPTS');
+    deepEq(['bcd', 'bcd-f'].filter(t => !opts.includes(t)), [], 'the Type column does not offer bcd and bcd-f');
+    eq(run(`_meRecByteLen({ type: 'mti', encoding: 'ascii' })`), 4, 'an ASCII MTI is no longer 4 bytes wide');
+    run('__osm = _meSpecForMsg; _meSpecForMsg = () => ({ recognizers: [{ type: "mti", offset: 1, encoding: "bcd" }] })');
+    try {
+      eq(run('_followMti({ bytes: [0x58, 0x01, 0x10, 0x70] })'), '0110', 'Follow does not read a BCD MTI');
+      eq(run('_followMti({ bytes: [0x58, 0x01, 0x1A] })'), '', 'Follow takes a hex nibble for an MTI digit');
+    } finally { run('_meSpecForMsg = __osm'); }
+    assert.ok(/case 'mti': \{[\s\S]{0,80}encSel\('encoding',\['ascii','ebcdic','bcd'\]/.test(APP_SRC), 'the recognizer editor does not offer bcd for an MTI');
+    // BCD is a field type, not a length encoding: a length in BCD is hex-char.
+    assert.ok(/is not a length encoding — use one of \$\{_ME_TYPE_OPTS\.filter\(t => t && !_meBcdPad\(t\)\)/.test(APP_SRC),
+      'the length_encoding lint offers bcd as a length encoding');
+  });
+
+  test('[REGRESSION] bcd: a LEN marked as a length source sizes a BCD field after it by its digits', () => withBcd(() => {
+    // Plain leaves, not a group: PLEN arms the field after it.
+    const item = { name: 'LF', label: 'LF', ddl_bindings: ['BASE/DDL/BCD/LEAFMSG'], parse_spec_binary: [{ 'read-ddl': 'ANY' }],
+      overrides: { PLEN: { type: 'hex-char', bytes: 1, count: 'digits', vlg: true }, PAN: { type: 'bcd' } } };
+    const fs = parseHex(item, '15 0411111111111111 5A5A');
+    deepEq(probs(fs), [], 'a length source in front of a BCD field reports problems');
+    eq(byId(fs, 'PAN').value, '411111111111111', 'a length source does not give a BCD field its digit count');
+    eq(byId(fs, 'TAIL').value, 'ZZ', 'the field after a digit-sized BCD field does not start where it ends');
+  }));
+
+  test('[REGRESSION] generate: a BCD message — MTI, digit-counted PAN, odd and F-padded DEs — round-trips', () => withBcd(() => {
+    const r = gen(bcdItem(), { des: [2, 3, 4], values: { 'DE-2.PAN': '411111111111111', 'DE-3': '123456', 'DE-4': '789' } });
+    deepEq(clean(r), [], 'the BCD message did not round-trip');
+    eq(r.written.TYP, '0200', 'the MTI written by the recognizer is not shown as its digits');
+    eq(_hex(r.out), '0200700000000000000015041111111111111112345678' + '9F', 'the BCD bytes are not as the parse reads them');
+    const fs = parseHex(bcdItem(), _hex(r.out));
+    eq(byId(fs, 'DE-2.PAN').value, '411111111111111', 'the written PAN does not parse back as its digits');
+    eq(byId(fs, 'DE-4').value, '789', 'the written bcd-f does not parse back as its digits');
+    // The dialog counts a BCD field in digits, and offers number sources.
+    sandbox.__item = bcdItem();
+    const m = JSON.parse(run('JSON.stringify(_genModel(__item, {}, false))'));
+    const de3 = m.des[3].leaves.find(f => f.id === 'DE-3');
+    eq(de3.kind, 'num', 'a BCD row is not a number to the dialog');
+    eq(de3.len, 6, 'a BCD row is not as long as its digits');
   }));
 
   test('generate: an ISO message round-trips in ASCII and EBCDIC, binary and hex bitmap, secondary included', () => withTree(() => {

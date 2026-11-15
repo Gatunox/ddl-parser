@@ -26493,6 +26493,19 @@ console.log('\ngenerate a message');
     eq(r.out.length, 1, 'a repeat whose count is refused still writes its body');
   }));
 
+  test('[REGRESSION] Help → Generate names what is not generated today, not what was in stage 1', () => {
+    const li = (html.match(/<li><strong>Generate<\/strong> — beside[\s\S]*?<\/li>/) || [''])[0];
+    assert.ok(li, 'Help has no Generate entry');
+    // read-tlv, map, de entries and repeat have all been written since v1.64.x.
+    assert.ok(!/Not yet generated, and named when met: <code>read-tlv<\/code>, <code>map<\/code>/.test(li), 'Help still says read-tlv, map, de entries and repeat are not generated');
+    for (const gap of ['TLV tag read by its own <code>blocks</code>', '<code>token-area</code> block inside a <code>de</code> entry',
+                       'a length source (<code>vlg</code> on the field itself)', 'BCD field in a <code>de</code> entry'])
+      assert.ok(li.includes(gap), `Help does not name what is not generated: ${gap}`);
+    // The gaps it names are real: each is said in the window as Help says.
+    assert.ok(/a tag read by "blocks" is not generated yet/.test(APP_SRC), 'the TLV-by-blocks gap is not said');
+    assert.ok(/only a length from a field or a number is generated yet/.test(APP_SRC), 'the sizeof-alone gap is not said');
+  });
+
   test('generate: an ISO message round-trips in ASCII and EBCDIC, binary and hex bitmap, secondary included', () => withTree(() => {
     for (const enc of ['ascii', 'ebcdic']) for (const bm of ['binary', 'hex']) {
       const r = gen(iso(enc, bm), { values: { 'DE-2.PAN': '4111111111111111', 'DE-5': '513', 'DE-69': 'ZZ' }, des: [2, 3, 5, 69] });

@@ -2593,6 +2593,13 @@ class: its parse spec run in reverse, each block writing what it would read.
   already written it writes nothing, noted; `peek` comes back after; inline
   `overrides` and a `read`'s inline `map` hold for that block. A TLV tag read by
   `blocks` is named and left out, never guessed.
+- **Not generated yet.** Named in the window when met: a TLV tag read by its own
+  `blocks`, a `token-area` block inside a `de` entry (an ISO class's Token buffer
+  row is the way), and a `read-fixed` length or `repeat` count that is a `sizeof`
+  alone or a field read as text in another type. Not named, but the check back
+  shows the field that came back different: a field marked as a length source
+  (`vlg` on the field itself), and a BCD field in a `de` entry framed by a length
+  counting digits (TODO 35). Help → Generate lists the same.
 
 ## 13. Storage
 

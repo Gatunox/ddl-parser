@@ -23772,7 +23772,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.72.0.0';
+const APP_VERSION  = '1.72.1.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -36054,6 +36054,7 @@ function _meHtmlId(item) {
     </div>
   </div>
   <div id="me-id-warn" class="me-warn-inline" style="margin-top:6px">${_meIdWarnHtml(item)}</div>
+  <div class="me-lbl" id="me-id-modified" style="margin-top:6px" title="Set by the Save that changes this class. An imported class keeps the date its file carries.">Last modified: ${_meModifiedText(item)}</div>
 </div>`;
   }
 }
@@ -46091,12 +46092,38 @@ function _meClearImportMarks() {
   _meSyncAttention();
 }
 
+// When each class last changed: the Save that changes it stamps it — a class
+// that comes out of the Save as it went in keeps its date, so reordering the
+// list or saving another class moves nothing. An imported class keeps the date
+// its file carries (none: unknown), since the change is the source's, not this
+// Save's. Asked 2026-11-15. Returns what puts the old dates back, for a Save
+// that writes nothing.
+function _meStampModified(specs) {
+  // Keys sorted: an object whose keys were set in another order is the same class.
+  const canon = v => Array.isArray(v) ? v.map(canon) : v && typeof v === 'object'
+    ? Object.fromEntries(Object.keys(v).sort().map(k => [k, canon(v[k])])) : v;
+  const strip = x => { const { modified, ...rest } = x; return JSON.stringify(canon(rest)); };
+  const before = new Set((_fmtGetSaved().specs || []).map(strip));
+  const now = new Date().toISOString(), undo = [];
+  for (const x of specs) if (x && !_meImportMark(x) && !before.has(strip(x))) { undo.push([x, x.modified]); x.modified = now; }
+  return () => undo.forEach(([x, m]) => { if (m === undefined) delete x.modified; else x.modified = m; });
+}
+// "2026-11-15 14:32", local time — or unknown, for a class saved before dates were kept.
+function _meModifiedText(item) {
+  const d = item && item.modified ? new Date(item.modified) : null;
+  if (!d || isNaN(d)) return 'unknown';
+  const p = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
 function _meSave() {
   // Ordered before it is written, so what lands in storage — and in every export
   // taken from it — reads in DDL order whatever sequence the overrides were
   // created in.
   for (const s of (_meState.specs || [])) if (s && s.overrides) _meOvOrder(s);
+  const _unstamp = _meStampModified(_meState.specs || []);
   if (!_fmtSave(_meState.specs)) {
+    _unstamp();
     // Nothing was written: the editor stays dirty, Save stays live, and the
     // import (if any) stays pending — a failed save must not look like a save.
     const st = document.getElementById('me-status');
@@ -46127,6 +46154,8 @@ function _meSave() {
   _meSyncAttention();
   const btn = document.getElementById('me-save-btn');
   if (btn) btn.disabled = true;
+  const _mod = document.getElementById('me-id-modified');
+  if (_mod) _mod.textContent = `Last modified: ${_meModifiedText(_meCurItem())}`;
   const s = document.getElementById('me-status');
   if (s) { s.textContent = 'Saved.'; setTimeout(() => { if (s) s.textContent = ''; }, 2000); }
   // A Parse Spec with a JSON error is not in the class — what was saved is its

@@ -2173,6 +2173,7 @@ returned UNKNOWN.
 **Identity**
 - Type code (≤5 chars) | Label | Volume | Colour. `kind` marks a file spec (§3.2).
 - No priority field; sidebar order is authoritative.
+- **Last modified** (`modified`, an ISO timestamp, shown in local time as `YYYY-MM-DD hh:mm`). Set by the Save that changes the class — a class that comes out of the Save as it went in (keys in any order, list reordered) keeps its date, and a Save that writes nothing keeps the old one. An imported class keeps the date its file carries; with none, and for a class saved before dates were kept, it reads `unknown`. It travels in the export.
 
 **Recognizers**
 - Ordered, drag-reorderable list of recognizer rows

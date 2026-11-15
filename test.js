@@ -1325,6 +1325,45 @@ test('file classes are walked in LIST order — the list is the user\'s statemen
   domEl._fmtLoad();
 });
 
+test('[REGRESSION] the Save that changes a class stamps its date; one it leaves alone keeps it', () => {
+  // Asked 2026-11-15: the Identity of a class shows when it last changed.
+  const R = c => vm.runInContext(c, sandbox);
+  const cls = (name, extra = {}) => ({ name, label: name, recognizers: [], ddl_bindings: [], parse_spec_binary: [], ...extra });
+  sandbox.__a = [cls('A', { modified: '2020-01-01T00:00:00.000Z' }), cls('B')];
+  R('_fmtSave(__a)');
+  // What the editor holds is the list as loaded — migrated, as storage gives it.
+  sandbox.__a = JSON.parse(R('JSON.stringify(_fmtGetSaved().specs)'));
+  try {
+    // Nothing changed, the list reordered: no date moves.
+    sandbox.__l = JSON.parse(JSON.stringify(sandbox.__a)).reverse();
+    // Key order is not a change: a key re-set lands last.
+    { const o = sandbox.__l[0].name; delete sandbox.__l[0].name; sandbox.__l[0].name = o; }
+    R('_meStampModified(__l)');
+    deepEq(sandbox.__l.map(x => x.modified ?? null), [null, '2020-01-01T00:00:00.000Z'], 'a Save that changed nothing stamped a class');
+    // B changes: only B is stamped. A failed Save puts it back.
+    sandbox.__l = JSON.parse(JSON.stringify(sandbox.__a)); sandbox.__l[1].vol = 'ATM';
+    sandbox.__undo = R('_meStampModified(__l)');
+    eq(sandbox.__l[0].modified, '2020-01-01T00:00:00.000Z', 'a class the Save left alone was stamped');
+    assert.ok(Date.now() - Date.parse(sandbox.__l[1].modified) < 60000, `the changed class was not stamped now: ${sandbox.__l[1].modified}`);
+    R('__undo()');
+    eq('modified' in sandbox.__l[1], false, 'a Save that wrote nothing kept the new date');
+    // An imported class keeps the date its file carries, or none.
+    sandbox.__l = [cls('A', { vol: 'X', modified: '2021-05-05T10:00:00.000Z' }), cls('C', { vol: 'Y' })];
+    R('_meImportMarks = new Map(); _meMarkImported(__l[0], "over"); _meMarkImported(__l[1], "new"); _meStampModified(__l); _meImportMarks = new Map();');
+    deepEq(sandbox.__l.map(x => x.modified ?? null), ['2021-05-05T10:00:00.000Z', null], 'an import took the Save\'s date');
+    // Identity says it, local time, or unknown.
+    eq(R('_meModifiedText({})'), 'unknown', 'a class with no date is not unknown');
+    eq(R(`_meModifiedText({ modified: new Date(2026, 10, 15, 9, 5).toISOString() })`), '2026-11-15 09:05', 'the date is not shown as local YYYY-MM-DD hh:mm');
+    assert.ok(/id="me-id-modified"[^>]*>Last modified: \$\{_meModifiedText\(item\)\}/.test(psFnSource('_meHtmlId')), 'Identity does not show the date');
+    const save = psFnSource('_meSave');
+    assert.ok(/const _unstamp = _meStampModified\(_meState\.specs \|\| \[\]\);\s*if \(!_fmtSave\(_meState\.specs\)\) \{\s*_unstamp\(\);/.test(save), 'Save does not stamp before writing, or keeps the date when nothing was written');
+    assert.ok(/me-id-modified[\s\S]*Last modified: \$\{_meModifiedText\(_meCurItem\(\)\)\}/.test(save), 'Save does not repaint the date it set');
+  } finally {
+    storage.removeItem('up_format_specs');
+    domEl._fmtLoad();
+  }
+});
+
 test('[REGRESSION] the Files list shows the order detection actually uses', () => {
   // The Files list sorted itself alphabetically for display while detection
   // walked the stored array — so a catch-all '*' class sitting FIRST in the

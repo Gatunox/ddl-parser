@@ -16444,6 +16444,15 @@ test('every numeric attribute documents its base', () => {
   eq((src.match(/\.\.\._PS_NUMBASE_DESC,/g) || []).length,
      (src.match(/\.\.\._PS_SIZEOF_DESC,/g) || []).length,
      'every attribute that documents sizeof documents the base too');
+  // And that a number can be worked out (TODO 21), in the same places.
+  const ops = (src.match(/const _PS_NUMOP_DESC = \[[\s\S]*?\n\];/) || [''])[0];
+  for (const o of ['plus', 'minus', 'times', 'div', 'min', 'max'])
+    assert.ok(ops.includes(`<code>${o}</code>`), `the arithmetic help does not name ${o}`);
+  assert.ok(/One operation per object/.test(ops), 'the arithmetic help does not say one operation per object');
+  eq((src.match(/\.\.\._PS_NUMOP_DESC,/g) || []).length,
+     (src.match(/\.\.\._PS_SIZEOF_DESC,/g) || []).length,
+     'every attribute that documents sizeof documents the operations too');
+  assert.ok(/### 5\.19b A number can be worked out/.test(fs.readFileSync('./SPEC-message-format-detector.md', 'utf8')), 'SPEC has no section on operations');
   // And SPEC says it.
   const spec = fs.readFileSync('./SPEC-message-format-detector.md', 'utf8');
   assert.ok(/A numeric reference is DECIMAL, unless it states a base/.test(spec),
@@ -26393,6 +26402,95 @@ console.log('\ngenerate a message');
     const de3 = m.des[3].leaves.find(f => f.id === 'DE-3');
     eq(de3.kind, 'num', 'a BCD row is not a number to the dialog');
     eq(de3.len, 6, 'a BCD row is not as long as its digits');
+  }));
+
+  // Arithmetic on a number (TODO 21): one operation per operand object.
+  const EX_DDL = 'DEFINITION EXMSG.\n  02 LEN PIC 9(2).\n  02 CNT PIC 9(1).\n  02 HDR PIC X(3).\n  02 ROW PIC X(2).\n  02 TABLE PIC X(6).\nEND\n';
+  const withEx = fn => {
+    const saved = run('({ t: S.ddlTree })');
+    sandbox.__ex = EX_DDL;
+    run('S.ddlTree = { BASE: { DDL: { EX: __ex } } }; _ddlTreeVersion++;');
+    try { return fn(); } finally { sandbox.__saved = saved; run('S.ddlTree = __saved.t; _ddlTreeVersion++;'); }
+  };
+  const exItem = spec => ({ name: 'EX', label: 'EX', ddl_bindings: ['BASE/DDL/EX/EXMSG'], parse_spec_binary: spec });
+  const asc = t => Array.from(t, c => c.charCodeAt(0).toString(16).padStart(2, '0')).join('');
+  const vals = fs => Object.fromEntries(fs.filter(f => !f.error).map(f => [f.id, f.value]));
+  const errs = fs => fs.filter(f => f.error).map(f => f.error);
+
+  test('[REGRESSION] numbers: a length, a skip and a count worked out with each operation', () => withEx(() => {
+    const rf = (len, as) => ({ 'read-fixed': { length: len, as } });
+    let fs = parseHex(exItem([{ read: 'LEN' }, rf({ field: 'LEN', minus: 2 }, 'BODY'), rf(2, 'TRL')]), asc('05ABCZZ'));
+    deepEq(errs(fs), [], 'minus reports errors');
+    eq(vals(fs).BODY, 'ABC', 'LEN minus 2 is not the bytes before the trailer');
+    eq(vals(fs).TRL, 'ZZ', 'the trailer does not start where LEN minus 2 ends');
+    // Nested: LEN − (sizeof HDR + 2) = 7 − 5.
+    fs = parseHex(exItem([{ read: 'LEN' }, rf({ field: 'LEN', minus: { sizeof: 'HDR', plus: 2 } }, 'B')]), asc('07XY'));
+    eq(vals(fs).B, 'XY', 'a nested operation is not worked out inside out');
+    fs = parseHex(exItem([{ read: 'LEN' }, { read: 'CNT' }, rf({ field: 'CNT', times: 2 }, 'B')]), asc('003WWWWWW'));
+    eq(vals(fs).B, 'WWWWWW', 'times is not CNT × 2');
+    fs = parseHex(exItem([{ read: 'LEN' }, rf({ field: 'LEN', min: { sizeof: 'HDR' } }, 'B'), rf({ field: 'LEN', max: 1 }, 'C')]), asc('09ABCDEFGHIJKL'));
+    eq(vals(fs).B, 'ABC', 'min is not the smaller of LEN and sizeof HDR');
+    eq(vals(fs).C, 'DEFGHIJKL', 'max is not the larger of LEN and 1');
+    // div: how many ROWs fit in TABLE — 6 / 2, and 7 / 2 rounds down, as a skip and a repeat count.
+    fs = parseHex(exItem([{ skip: { length: { sizeof: 'TABLE', div: { sizeof: 'ROW' } } } }, rf(1, 'A'),
+      { repeat: { count: { sizeof: 'TABLE', div: 2 }, body: [rf(1, 'R')] } }, rf({ sizeof: 'TABLE', div: 4 }, 'D')]), asc('xxxA123D'));
+    deepEq(errs(fs), [], 'div reports errors');
+    eq(vals(fs).A, 'A', 'a skip by sizeof TABLE div sizeof ROW does not skip 3');
+    eq(fs.filter(f => f.id === 'R').length, 3, 'a repeat count of sizeof TABLE div 2 does not run 3 times');
+    eq(vals(fs).D, 'D', 'div does not round down (6 / 4 is 1)');
+  }));
+
+  test('[REGRESSION] numbers: two operations, div by 0, and an operand that does not resolve are errors', () => withEx(() => {
+    const rf = len => ({ 'read-fixed': { length: len, as: 'B' } });
+    let e = errs(parseHex(exItem([{ read: 'LEN' }, rf({ field: 'LEN', minus: 1, plus: 2 })]), asc('05ABCDE')));
+    assert.ok(e.some(x => /"plus" and "minus" on one number — one operation per object/.test(x)), JSON.stringify(e));
+    e = errs(parseHex(exItem([{ read: 'LEN' }, rf({ field: 'LEN', div: 0 })]), asc('05ABCDE')));
+    assert.ok(e.some(x => /"div" by 0/.test(x)), JSON.stringify(e));
+    e = errs(parseHex(exItem([{ read: 'LEN' }, rf({ field: 'LEN', minus: { sizeof: 'NOPE' } })]), asc('05ABCDE')));
+    assert.ok(e.some(x => /"minus": "sizeof": no element named 'NOPE'/.test(x)), JSON.stringify(e));
+    e = errs(parseHex(exItem([{ read: 'LEN' }, rf({ field: 'LEN', minus: 'X9' })]), asc('05ABCDE')));
+    assert.ok(e.some(x => /"minus": 'X9' not yet read/.test(x)), JSON.stringify(e));
+    // A negative result is refused by the block, as a negative field always was.
+    e = errs(parseHex(exItem([{ read: 'LEN' }, rf({ field: 'LEN', minus: 9 })]), asc('05ABCDE')));
+    assert.ok(e.some(x => /length -4 is negative/.test(x)), JSON.stringify(e));
+  }));
+
+  test('[REGRESSION] numbers: a when compares against a worked-out number, numeric and equal alike', () => withEx(() => {
+    const w = (op, rhs) => exItem([{ read: 'LEN' }, { when: { field: 'LEN', [op]: rhs,
+      then: [{ 'read-fixed': { length: 1, as: 'YES' } }], else: [{ 'read-fixed': { length: 1, as: 'NO' } }] } }]);
+    eq(Object.keys(vals(parseHex(w('greater_than', { sizeof: 'HDR', plus: 1 }), asc('05Z')))).includes('YES'), true, '5 > 3 + 1 does not hold');
+    eq(Object.keys(vals(parseHex(w('greater_than', { sizeof: 'HDR', plus: 2 }), asc('05Z')))).includes('NO'), true, '5 > 3 + 2 holds');
+    eq(Object.keys(vals(parseHex(w('equal', { field: 'LEN', minus: 0 }), asc('05Z')))).includes('YES'), false, 'an equal against LEN − 0 compares "05" with its digits, not its number');
+    eq(Object.keys(vals(parseHex(w('equal', { sizeof: 'HDR', plus: 12 }), asc('15Z')))).includes('YES'), true, 'an equal against sizeof HDR + 12 does not compare "15" with 15');
+    const wc = exItem([{ read: 'LEN' }, { read: 'CNT' }, { when: { field: 'LEN', equal: { field: 'CNT', plus: 10 },
+      then: [{ 'read-fixed': { length: 1, as: 'YES' } }] } }]);
+    eq(Object.keys(vals(parseHex(wc, asc('155Z')))).includes('YES'), true, 'an equal against CNT + 10 does not compare "15" with 15');
+  }));
+
+  test('[REGRESSION] generate: a worked-out length or count is written, and a field it starts from is worked back', () => withEx(() => {
+    // read-fixed LEN − 2: the data is 4 bytes, so LEN holds 6.
+    let r = gen(exItem([{ read: 'LEN' }, { 'read-fixed': { length: { field: 'LEN', minus: 2 }, as: 'BODY' } }, { 'read-fixed': { length: 2, as: 'TRL' } }]),
+      { values: { BODY: 'ABCD' } });
+    deepEq(clean(r), [], 'a length worked back through minus does not round-trip');
+    eq(r.written.LEN, '6', 'LEN is not the data plus 2');
+    // From sizes only: a number, written as one.
+    r = gen(exItem([{ 'read-fixed': { length: { sizeof: 'HDR', plus: 1 }, as: 'B' } }]), { values: { B: 'WXYZ' } });
+    deepEq(clean(r), [], 'a length from sizes only does not round-trip');
+    eq(r.out.length, 4, 'sizeof HDR + 1 is not 4 bytes');
+    // repeat CNT + 1: CNT given 2 → 3 passes, CNT written 2.
+    r = gen(exItem([{ read: 'LEN' }, { read: 'CNT' }, { repeat: { count: { field: 'CNT', plus: 1 }, body: [{ 'read-fixed': { length: 1, as: 'R' } }] } }]),
+      { values: { CNT: '2' } });
+    deepEq(clean(r), [], 'a count worked back through plus does not round-trip');
+    eq(r.out.length, 3 + 3, 'CNT + 1 with CNT 2 does not write 3 passes');
+    eq(r.written.CNT, '2', 'CNT is not what makes the count come to the passes');
+    // times cannot be worked back: said, and skipped.
+    r = gen(exItem([{ read: 'LEN' }, { 'read-fixed': { length: { field: 'LEN', times: 2 }, as: 'B' } }]), {});
+    assert.ok(r.problems.some(p => /a field set through "times" cannot be worked back/.test(p)), JSON.stringify(r.problems));
+    r = gen(exItem([{ read: 'LEN' }, { 'read-fixed': { length: { field: 'LEN', minus: 1, plus: 1 }, as: 'B' } }]), {});
+    assert.ok(r.problems.some(p => /one operation per object/.test(p)), JSON.stringify(r.problems));
+    r = gen(exItem([{ read: 'CNT' }, { repeat: { count: { field: 'CNT', minus: 1, plus: 1 }, body: [{ 'read-fixed': { length: 1, as: 'R' } }] } }]), {});
+    assert.ok(r.problems.some(p => /^repeat: .*one operation per object/.test(p)), JSON.stringify(r.problems));
+    eq(r.out.length, 1, 'a repeat whose count is refused still writes its body');
   }));
 
   test('generate: an ISO message round-trips in ASCII and EBCDIC, binary and hex bitmap, secondary included', () => withTree(() => {

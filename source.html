@@ -23772,7 +23772,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.70.0.0';
+const APP_VERSION  = '1.71.0.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -27623,6 +27623,16 @@ const _PS_NUMBASE_DESC = [
   'A field that is <b>not a number in the base asked for is an error</b>, naming the field and both ways out. It is never guessed: reading the bytes as hex whenever the text did not look like digits is what made a BINARY 16 counter parse as a plausible unrelated decimal and truncate a services loop.',
 ];
 
+// Arithmetic on any number (TODO 21) — spread beside the base and sizeof, so
+// every attribute that takes a number says it takes one worked out too.
+const _PS_NUMOP_DESC = [
+  'A number can be <b>worked out</b>: the operand object takes <b>one</b> of <code>plus</code> · <code>minus</code> · <code>times</code> · <code>div</code> · <code>min</code> · <code>max</code>, with a second operand — a number, a field, a <code>{"sizeof"}</code>, or another object with its own operation.',
+  ['<code>{"field": "LEN", "minus": 4}</code>', 'LEN − 4 — the bytes before a 4-byte trailer.'],
+  ['<code>{"sizeof": "TABLE", "div": {"sizeof": "ROW"}}</code>', 'How many ROWs fit in TABLE. <code>div</code> rounds down; by 0 it is an error.'],
+  ['<code>{"field": "LEN", "min": {"sizeof": "DATA"}}</code>', 'The smaller of the two — a wire length capped at what the DDL declares.'],
+  'One operation per object, so there is no precedence to learn: for more, nest — <code>{"field": "LEN", "minus": {"sizeof": "HDR", "plus": 4}}</code> is LEN − (HDR + 4). Two on one object is an error.',
+];
+
 const _PS_SIZEOF_DESC = [
   ['<code>{"sizeof": "EMV.DATA"}</code>', 'What the <b>DDL declares</b> for an element, in bytes — the element\'s own length when it is a leaf, the sum of its non-REDEFINES leaves when it is a group. Reads no bytes and moves no cursor.'],
   'A group that carries its own <b>length</b> reports what it declares for its <b>payload</b>: the length leaf is a statement <i>about</i> those bytes, not one of them. So <code>LEN(4) A(12) B(10)</code> is <b>22</b>, which is the number a wire length of 23 is disagreeing with — and the same 22 the engine prints when it reports the overrun.',
@@ -28017,6 +28027,7 @@ const _PS_HELP = {
         'A string is the <b>id of a field already read</b> — its value is used as the count, so the size can come off the wire.',
         ..._PS_SIZEOF_DESC,
         ..._PS_NUMBASE_DESC,
+        ..._PS_NUMOP_DESC,
         'The cursor advances by exactly this many bytes.',
       ]],
       ['type', '"X" | "9" | "BINARY"', false, [
@@ -28442,6 +28453,7 @@ const _PS_HELP = {
           'The DE then occupies <b>exactly</b> this many bytes, so the next one starts at the end of it whatever the blocks read.',
           ..._PS_SIZEOF_DESC,
         ..._PS_NUMBASE_DESC,
+        ..._PS_NUMOP_DESC,
         ]),
         _psKey('length_prefix', 'int | {bytes, type, count}', 'optional', [
           'The element\'s length is <b>on the wire</b> and the DDL declares no LEN for it.',
@@ -28961,6 +28973,7 @@ const _PS_HELP = {
         'A string is the <b>id of a field already read</b> — its value is the distance, so a skip can be sized off the wire.',
         ..._PS_SIZEOF_DESC,
         ..._PS_NUMBASE_DESC,
+        ..._PS_NUMOP_DESC,
         'Nothing is captured and no row is emitted — the bytes simply go unread.',
         'A skip past the end of the message stops at the end rather than failing.',
         'Like every block, a skip moves where a later <code>read-ddl</code> starts — the DDL walk continues from the cursor, so a prefix the DDL does not describe can be stepped over.',
@@ -29041,6 +29054,7 @@ const _PS_HELP = {
         ['<code>{"field": "OTHER"}</code>', 'Another field already read — compare two fields to each other.'],
         ..._PS_SIZEOF_DESC,
         ..._PS_NUMBASE_DESC,
+        ..._PS_NUMOP_DESC,
         'Trailing spaces are trimmed before comparing, so a PIC X field padded on the wire still matches.',
         'Was called <code>is</code>. The old name is not converted — rename it.',
       ]],
@@ -29058,6 +29072,7 @@ const _PS_HELP = {
         ['<code>{"field": "OTHER"}</code>', 'Another field already read, its value as the prefix.'],
         ..._PS_SIZEOF_DESC,
         ..._PS_NUMBASE_DESC,
+        ..._PS_NUMOP_DESC,
         'Both sides are trimmed first, as <code>equal</code> trims them, so a PIC X field padded on the wire answers to what it holds. Case-sensitive, like <code>equal</code>.',
       ]],
       ['ends_with', 'value | [values] | {field} | {sizeof}', false, [
@@ -29067,6 +29082,7 @@ const _PS_HELP = {
         ['<code>{"field": "OTHER"}</code>', 'Another field already read, its value as the suffix.'],
         ..._PS_SIZEOF_DESC,
         ..._PS_NUMBASE_DESC,
+        ..._PS_NUMOP_DESC,
         'Trimmed and case-sensitive, the same as <code>starts_with</code> — so the padding after a PIC X value does not hide the end of it.',
       ]],
       ['greater_than', 'number | {field} | {sizeof}', false, [
@@ -29075,6 +29091,7 @@ const _PS_HELP = {
         ['<code>{"field": "MAX-LEN"}</code>',   'Another field already read.'],
         ..._PS_SIZEOF_DESC,
         ..._PS_NUMBASE_DESC,
+        ..._PS_NUMOP_DESC,
         'The question this pair exists for: <b>is the wire carrying more than the DDL has room for?</b>',
         'Both sides are read as numbers through the same chain everything else uses: an <code>as</code> on the operand, else the field\'s own <b>Type</b> override, else a guess that reports itself on the row. So a <code>hex-char</code> length compares as 74 on both sides, or on neither.',
         'A side that yields no number is an <b>error row</b> naming which side — never a silent false.',
@@ -29247,6 +29264,7 @@ const _PS_HELP = {
         ['<code>"NUM-SERVICES"</code>', 'The id of an <b>already-read</b> field. Its value is the number of iterations.'],
         ..._PS_SIZEOF_DESC,
         ..._PS_NUMBASE_DESC,
+        ..._PS_NUMOP_DESC,
         'Or the object form, which says how to read that field as a number. Its two keys are below.',
         'A field that has not been read yet, or holds nothing numeric, is an error — the loop never runs on a guess.',
         'When the count cannot be trusted (a binary counter in an ASCII message), use <code>read-while</code> instead.',
@@ -29317,6 +29335,7 @@ const _PS_HELP = {
         ['<code>"NUM-ITEMS"</code>',   'The id of a field already read — its value is the cap.'],
         ..._PS_SIZEOF_DESC,
         ..._PS_NUMBASE_DESC,
+        ..._PS_NUMOP_DESC,
         'There is a hard cap of 10000 passes regardless, so a runaway spec cannot hang the app.',
         '<b>Do not use a field-id cap when the input is ASCII and the count field is not</b> — that is the exact case <code>read-while</code> exists to avoid.',
       ]],
@@ -40154,7 +40173,48 @@ const _NUM_BASE_RE = { 16: /^[0-9a-f]+$/i, 10: /^[0-9]+$/, 8: /^[0-7]+$/ };
 // ASCII capture parsed to a plausible unrelated decimal and silently truncated
 // the PSTM services loop. Right often enough to be trusted, wrong often enough
 // to matter, and indistinguishable from outside. Requested 2026-09-13.
+// Arithmetic on a number reference (TODO 21): the operand object takes ONE of
+// these, with a second operand — a number, a field, a {"sizeof"}, or another
+// object with its own operation. One per object and nesting for more, so there
+// is no precedence to define: {"field": "LEN", "minus": {"sizeof": "HDR", "plus": 4}}.
+const _ME_NUM_OPS = ['plus', 'minus', 'times', 'div', 'min', 'max'];
+// The operation an operand object carries: { op, rhs, base } — base is the
+// object without it — or { error } for two, or null for none.
+function _meNumOpOf(ref) {
+  if (!ref || typeof ref !== 'object' || Array.isArray(ref)) return null;
+  const ops = _ME_NUM_OPS.filter(k => ref[k] !== undefined);
+  if (!ops.length) return null;
+  if (ops.length > 1) return { error: `${ops.map(o => `"${o}"`).join(' and ')} on one number — one operation per object; nest the second, e.g. {"field": "LEN", "minus": {"sizeof": "HDR", "plus": 4}}` };
+  const base = { ...ref }; delete base[ops[0]];
+  return { op: ops[0], rhs: ref[ops[0]], base };
+}
+// a OP b, whole numbers. Division rounds down; by zero it is an error.
+function _meNumApply(a, op, b) {
+  switch (op) {
+    case 'plus':  return { n: a + b };
+    case 'minus': return { n: a - b };
+    case 'times': return { n: a * b };
+    case 'div':   return b === 0 ? { error: `"div" by 0 — ${a} / 0 has no value` } : { n: Math.floor(a / b) };
+    case 'min':   return { n: Math.min(a, b) };
+    case 'max':   return { n: Math.max(a, b) };
+  }
+  return { error: `"${op}" is not an operation` };
+}
 function _meNumRef(ref, ctx) {
+  const o = _meNumOpOf(ref);
+  if (o) {
+    if (o.error) return { error: o.error };
+    const a = _meNumRefBase(o.base, ctx);
+    if (a.error) return a;
+    const b = typeof o.rhs === 'number' ? { n: o.rhs } : _meNumRef(o.rhs, ctx);
+    if (b.error) return { ...b, error: `"${o.op}": ${b.error}` };
+    if (!Number.isFinite(b.n)) return { error: `"${o.op}": ${JSON.stringify(o.rhs)} is not a number` };
+    const r = _meNumApply(a.n, o.op, b.n);
+    return r.error ? { id: a.id, error: r.error } : { ...a, n: r.n };
+  }
+  return _meNumRefBase(ref, ctx);
+}
+function _meNumRefBase(ref, ctx) {
   // `{"sizeof": "ID"}` is not read off the message at all — it is what the DDL
   // DECLARES for an element, in bytes. Answered here rather than at each call
   // site so it works everywhere a length, a count or a cap is taken, and reads
@@ -41797,7 +41857,7 @@ function _meWhenOperand(raw, numeric, ctx) {
     }
     if (typeof raw.field !== 'string' || !raw.field)
       return { error: `a comparison operand object must name a field, e.g. {"field": "MAX-LEN"} or {"sizeof": "EMV.DATA"}` };
-    if (!numeric) {
+    if (!numeric && !_meNumOpOf(raw)) {
       const f = ctx.fieldsById[raw.field];
       if (!f) return { error: `Field '${raw.field}' not yet read` };
       return { text: String(f.value ?? '') };
@@ -41805,7 +41865,7 @@ function _meWhenOperand(raw, numeric, ctx) {
     const r = _meNumRef(raw, ctx);
     if (r.error) return { error: r.error };
     if (r.assumed) _meNoteNumRefGuess(r, 'comparison', ctx);
-    return { n: r.n };
+    return numeric ? { n: r.n } : { text: String(r.n) };
   }
   if (Array.isArray(raw)) {
     if (numeric) return { error: 'a list compares only with equal / not_equal / starts_with / ends_with — a range is two blocks, or two operators' };
@@ -43811,7 +43871,42 @@ function _genLenBytes(n, type, w, enc) {
   return b.length === w ? b : null;
 }
 // A number a block takes from a field written before it, or as stated.
+// A number with an operation (TODO 21), worked out as the parse works it out.
 function _genNum(ref, g, what) {
+  const o = _meNumOpOf(ref);
+  if (!o) return _genNumBase(ref, g, what);
+  if (o.error) { g.problems.push(`${what}: ${o.error} — skipped`); return null; }
+  const a = _genNumBase(o.base, g, what);
+  const b = a == null ? null : _genNum(o.rhs, g, what);
+  if (a == null || b == null) return null;
+  const r = _meNumApply(a, o.op, b);
+  if (r.error) { g.problems.push(`${what}: ${r.error} — skipped`); return null; }
+  return r.n;
+}
+// The field a length or count is written INTO, through an operation: the
+// number the field must hold for `op` to give `want`. Only plus and minus can
+// be turned around — times, div, min and max lose what the field held.
+function _genNumInvert(ref, want, g, what) {
+  const o = _meNumOpOf(ref);
+  if (!o) return { ref, n: want };
+  if (o.error) { g.problems.push(`${what}: ${o.error} — skipped`); return null; }
+  if (o.op !== 'plus' && o.op !== 'minus') { g.problems.push(`${what}: a field set through "${o.op}" cannot be worked back from what was written — skipped`); return null; }
+  const b = _genNum(o.rhs, g, what);
+  if (b == null) return null;
+  return _genNumInvert(o.base, o.op === 'plus' ? want - b : want + b, g, what);
+}
+// The operation worked forward from the value its field holds — `v` stands for
+// the first operand, the rest as written.
+function _genNumFrom(ref, v, g, what) {
+  const o = _meNumOpOf(ref);
+  if (!o) return v;
+  const a = _genNumFrom(o.base, v, g, what), b = a == null ? null : _genNum(o.rhs, g, what);
+  if (a == null || b == null) return null;
+  const r = _meNumApply(a, o.op, b);
+  if (r.error) { g.problems.push(`${what}: ${r.error} — skipped`); return null; }
+  return r.n;
+}
+function _genNumBase(ref, g, what) {
   if (typeof ref === 'number') return ref;
   if (ref && typeof ref === 'object' && ref.sizeof !== undefined) {
     const n = _meDeclaredSize(ref.sizeof, g);
@@ -43889,10 +43984,15 @@ function _genReadToEnd(attrs, g) {
 // field, else once — and the count field set to what was written, spelled the
 // way the parse reads it: by its "as", a stated base, or its own type.
 function _genRepeat(attrs, g) {
-  const ref = attrs?.count;
+  // A count with an operation: from sizes and numbers only it is a number; from
+  // a field, the field is set so the operation comes to the passes written.
+  const full = attrs?.count, op = _meNumOpOf(full);
+  if (op?.error) { g.problems.push(`repeat: ${op.error} — skipped`); return; }
+  const ref = op ? _genNumField(full) : full;
   const name = ref && typeof ref === 'object' ? ref.field : ref;
   let N, cnt = null;
-  if (typeof ref === 'number') N = ref;
+  if (op && ref == null) { if ((N = _genNum(full, g, 'repeat')) == null) return; }
+  else if (typeof ref === 'number') N = ref;
   else {
     const bs = typeof name === 'string' && name ? _meSplitNumBase(name, ref) : { bad: true };
     if (bs.bad || ref.sizeof !== undefined) { g.problems.push('repeat: only a count from a field or a number is generated yet — skipped'); return; }
@@ -43902,6 +44002,7 @@ function _genRepeat(attrs, g) {
       if (!g.spans[cnt.id]) { g.problems.push(`repeat: its count, ${cnt.id}, was not written before it — skipped`); return; }
       const given = Object.prototype.hasOwnProperty.call(g.values, cnt.id) ? String(g.values[cnt.id]).trim() : '';
       N = given === '' ? 1 : parseInt(given, bs.stated ? bs.base : 10);
+      if (op && given !== '' && (N = _genNumFrom(full, N, g, 'repeat')) == null) return;
     }
   }
   if (!Number.isInteger(N) || N < 0) { g.problems.push(`repeat: the count ${cnt ? cnt.id + ' ' : ''}is not a whole number — written as 0`); N = 0; }
@@ -43912,15 +44013,23 @@ function _genRepeat(attrs, g) {
   if (occMax > 0 && N > occMax) { g.problems.push(`repeat: ${N} is more than the ${occMax} occurrences the DDL declares — written ${occMax}`); N = occMax; }
   for (let i = 0; i < N && !g.stopped; i++) _genBlocks(body, g);
   if (!cnt) return;
+  // What the count field holds for the operation to come to N.
+  let V = N;
+  if (op) {
+    const inv = _genNumInvert(full, N, g, 'repeat');
+    if (!inv) return;
+    if (inv.n < 0) { g.problems.push(`repeat: ${cnt.id} would have to hold ${inv.n} for ${N} pass(es) — not set`); return; }
+    V = inv.n;
+  }
   const [pos, w] = g.spans[cnt.id];
   const def = _genDefs(g).find(d => d.id === cnt.id) || { id: cnt.id, length: w, _dataType: 'PIC X' };
   let bytes, shown;
   if (/^(u?int|binary)/i.test(cnt.as)) {
-    bytes = []; for (let i = 0, x = N; i < w; i++, x = Math.floor(x / 256)) bytes.unshift(x % 256);
+    bytes = []; for (let i = 0, x = V; i < w; i++, x = Math.floor(x / 256)) bytes.unshift(x % 256);
     if (/-le$/i.test(cnt.as)) bytes.reverse();
-    shown = String(N);
-  } else if (cnt.bs.stated) { shown = N.toString(cnt.bs.base).toUpperCase().padStart(w, '0'); bytes = _genText(shown, g.enc); }
-  else ({ bytes, shown } = _genEncode(def, String(N), w, g));
+    shown = String(V);
+  } else if (cnt.bs.stated) { shown = V.toString(cnt.bs.base).toUpperCase().padStart(w, '0'); bytes = _genText(shown, g.enc); }
+  else ({ bytes, shown } = _genEncode(def, String(V), w, g));
   const cur = g.cursor;
   _genPut(g, pos, bytes);
   g.cursor = cur;
@@ -43997,7 +44106,13 @@ function _genReadFixed(attrs, g) {
 // parse reads the number back — decimal text unless the reference states a base
 // (":h") or a binary type ("as", or the field's type override).
 function _genReadFixedRef(attrs, g) {
-  const ref = attrs.length, id = attrs.as;
+  const id = attrs.as;
+  // A length worked out from fields and sizes only: a number, written as one.
+  // One that names a field is that field's to set: what was written, worked back
+  // through the operation (LEN - 4 sets LEN to the data plus 4).
+  const _op = _meNumOpOf(attrs.length);
+  const ref = _op && !_op.error ? _genNumField(attrs.length) : attrs.length;
+  if (_op && ref == null) { const n = _genNum(attrs.length, g, `read-fixed ${id}`); return n == null ? undefined : _genReadFixed({ ...attrs, length: n }, g); }
   const name = typeof ref === 'object' ? ref.field : ref;
   const bs = typeof name === 'string' && name ? _meSplitNumBase(name, ref) : { bad: true };
   if (bs.bad || ref.sizeof !== undefined) { g.problems.push(`read-fixed ${id}: only a length from a field or a number is generated yet — skipped`); return; }
@@ -44013,9 +44128,23 @@ function _genReadFixedRef(attrs, g) {
   const given = Object.prototype.hasOwnProperty.call(g.values, id);
   let v = given ? String(g.values[id]) : 'X'.repeat(Math.min(ddl ? _meEffLen(ddl, g) || 0 : 0, max));
   if (v.length > max) { g.problems.push(`read-fixed ${id}: ${v.length} bytes do not fit in ${lenId} — cut to ${max}`); v = v.slice(0, max); }
+  if (_op) {
+    // The field holds what makes the operation come to the data's length.
+    const inv = _genNumInvert(attrs.length, v.length, g, `read-fixed ${id}`);
+    if (!inv) return;
+    if (inv.n < 0 || inv.n > max) { g.problems.push(`read-fixed ${id}: ${lenId} would have to hold ${inv.n} for ${v.length} bytes — skipped`); return; }
+    _genField({ id, length: v.length, _dataType: 'PIC X' }, g.cursor, g, v.length);
+    g.written[id] = v;
+    return _genSetNumField(lenId, inv.n, pos, w, as, bin, bs, g);
+  }
   const n = v.length;
   _genField({ id, length: n, _dataType: 'PIC X' }, g.cursor, g, n);
   g.written[id] = v;
+  _genSetNumField(lenId, n, pos, w, as, bin, bs, g);
+}
+// The field a length or count names, set to `n` in the way the parse reads it
+// back: binary by its type, else digits in its base.
+function _genSetNumField(lenId, n, pos, w, as, bin, bs, g) {
   let bytes;
   if (bin) { bytes = []; for (let i = 0, x = n; i < w; i++, x = Math.floor(x / 256)) bytes.unshift(x % 256); if (/-le$/i.test(as)) bytes.reverse(); }
   else bytes = _genText(n.toString(bs.base || 10).toUpperCase().padStart(w, '0'), g.enc);
@@ -44025,6 +44154,14 @@ function _genReadFixedRef(attrs, g) {
   g.written[lenId] = String(n);
   g.hexOf[lenId] = _meBytesToHex(bytes).replace(/\s/g, '').toUpperCase();
   g.lenIds.add(lenId);
+}
+// The one field a number with operations is worked back into — the first
+// operand all the way down — or null when it starts from a size or a number.
+function _genNumField(ref) {
+  let r = ref;
+  for (let o = _meNumOpOf(r); o && !o.error; o = _meNumOpOf(r)) r = o.base;
+  const name = typeof r === 'object' ? r?.field : r;
+  return typeof name === 'string' && name && !_meSplitNumBase(name, r).literal ? r : null;
 }
 // The DEs a bitmap carries: those asked for, else every DE the DDL maps.
 function _genDeMap(g) { return g._deMap || (g._deMap = _meBuildDEMap(g)); }

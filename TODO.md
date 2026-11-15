@@ -895,7 +895,15 @@ bytes against the PSTM class's 872-byte floor) and now lifts that guard itself.
 
 ---
 
-## 21. [ ] A numeric reference cannot be an expression
+## 21. [x] A numeric reference cannot be an expression — *done v1.71.0.0*
+
+**Done 2026-11-14 (v1.71.0.0), the first shape below, widened.** The operand
+object takes one of `plus` · `minus` · `times` · `div` · `min` · `max` with a
+second operand (a number, a field, a `sizeof`, or another such object), one
+per object and nested for more — no precedence. Resolved in `_meNumRef`, so
+every block has it; Generate works it out, and works a field back through
+`plus` / `minus`. SPEC §5.19b.
+
 
 **Problem.** Everywhere a spec takes a number — `read-fixed`'s `length`, `skip`'s
 `length`, `repeat`'s `count`, `read-while`'s `max`, a `de` entry's `length`, every

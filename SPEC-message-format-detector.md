@@ -1200,6 +1200,42 @@ The digits a base permits are checked before the value is believed: `parseInt`
 stops at the first character it dislikes and returns what it read, so `"1A"` in
 base 10 would come back as **1** — a wrong length that looks like a right one.
 
+### 5.19b A number can be worked out — one operation per operand object
+
+```json
+{"read-fixed": {"length": {"field": "LEN", "minus": 4}, "as": "BODY"}}
+```
+
+The operand object of any number — `{"field": …}` or `{"sizeof": …}` — takes **one**
+of `plus` · `minus` · `times` · `div` · `min` · `max`, with a second operand: a
+number, a field reference (with its base, §5.19a), a `{"sizeof"}`, or another
+object carrying its own operation. Resolved in `_meNumRef`, like `sizeof`, so it
+holds wherever a number is taken (§5.19's table) and reads the same everywhere.
+
+| Operation | Example | Is |
+|-----------|---------|----|
+| `plus` | `{"sizeof": "HDR", "plus": 2}` | HDR's declared size + 2 |
+| `minus` | `{"field": "LEN", "minus": 4}` | LEN − 4 |
+| `times` | `{"field": "CNT", "times": 8}` | CNT × 8 |
+| `div` | `{"sizeof": "TABLE", "div": {"sizeof": "ROW"}}` | how many ROWs fit — rounded down |
+| `min` / `max` | `{"field": "LEN", "min": {"sizeof": "DATA"}}` | the smaller / larger of the two |
+
+**One operation per object, and nesting for more**, so there is no precedence to
+define: `{"field": "LEN", "minus": {"sizeof": "HDR", "plus": 4}}` is
+LEN − (HDR + 4). Two on one object is an error naming both, as is `div` by 0 and
+an operand that does not resolve. The result is a whole number; one a block
+cannot use — a negative length — is refused by that block, as a negative field
+value always was. In a `when`, an equality operand with an operation compares as
+its number.
+
+**Generate** works the number out when everything in it was written before. A
+`read-fixed` length or a `repeat` count that starts from a field sets that field
+instead, worked back through the operation — `LEN − 4` writes LEN as the data's
+length + 4. Only `plus` and `minus` can be worked back; through `times`, `div`,
+`min` or `max` the block is skipped and says so.
+
+---
+
 ### 5.20 `read-to-end` — the end of what (`end_at`)
 
 ```json

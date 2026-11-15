@@ -16819,7 +16819,7 @@ function _resIssues(msg, msgWarns = []) {
 // in order. Anything that reads a bitmap, tokens, a TLV, up to a delimiter or
 // to the end, or decides at run time what is present (when, repeat,
 // read-while, stop), makes the record's length variable.
-const _ME_FIXED_BLOCKS = new Set(['read-ddl', 'read', 'read-fixed', 'skip', 'map']);
+const _ME_FIXED_BLOCKS = new Set(['read-ddl', 'read', 'read-fixed', 'read-bits', 'skip', 'map']);
 function _meSpecIsFixedLayout(blocks) {
   if (!Array.isArray(blocks) || !blocks.length) return false;
   return blocks.every(b => b && typeof b === 'object'
@@ -23772,7 +23772,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.71.0.1';
+const APP_VERSION  = '1.72.0.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -27711,6 +27711,7 @@ const _PS_GROUPS = [
   ]},
   { name: 'Read raw bytes', items: [
     ['read-fixed',          'N bytes, no DDL'],
+    ['read-bits',           'A byte split into named bit fields'],
     ['read-until',          'Until a sentinel or end of message'],
     ['read-length-value',   'A length, then that many bytes'],
     ['read-to-end',         'Whatever is left'],
@@ -28082,6 +28083,44 @@ const _PS_HELP = {
         [{"read-fixed": {"length": 2, "as": "SUB", "at": {"field": "HDR", "from": "start", "offset": 4}}}]],
       ['Overlay — read AMOUNT a second way without disturbing the sequence; "peek" puts the cursor back',
         [{"read-fixed": {"length": 6, "as": "AMOUNT-RAW", "at": {"field": "AMOUNT", "from": "start"}, "peek": true}}]],
+    ],
+  },
+  'read-bits': {
+    dflts: {
+      as: 'no row for the whole bytes — only the parts',
+    },
+    desc: 'Splits a byte — or up to eight — into named parts by their width in bits: a byte of flags, a code in a nibble.',
+    useWhen: [
+      'A byte carries <b>flags</b> or <b>codes narrower than a byte</b>, and each needs a name — to show it, or to branch on it with <code>when</code>.',
+      'A count or a length sits in <b>part of a byte</b> — the part is a number like any field read, so <code>repeat</code> and <code>length</code> take it.',
+    ],
+    attrs: [
+      ['length', 'int', true, [
+        'How many bytes to take, 1 to 8. The cursor advances by exactly this many.',
+      ]],
+      ['fields', '[{ "as": NAME, "bits": N }, …]', true, [
+        'The parts, from the most significant bit: bit 0 is the leftmost, as a bitmap counts. Several bytes are one stream, the first byte first.',
+        'Each part is a row holding its <b>number</b> — <code>0101</code> is 5 — and says which bits it is.',
+        'A part without <code>as</code> is spare: read, never a row.',
+        'The parts must take every bit: their <code>bits</code> add up to 8 × <code>length</code>.',
+        'The bits are those on the wire — an EBCDIC message is not translated first.',
+      ]],
+      ['as', 'string', false, [
+        'A row for the whole bytes, as hex <code>0x…</code>. The parts say they are bits of it.',
+      ]],
+    ],
+    examples: [
+      { what: 'A byte of <b>flags</b> and a code in a nibble — <code>A5</code> is 1 0 1001 01',
+        payload: 'A5',
+        spec: [{"read-bits": {"length": 1, "as": "FLAGS", "fields": [
+          {"as": "ONLINE", "bits": 1}, {"as": "RETRY", "bits": 1}, {"as": "CODE", "bits": 4}, {"bits": 2}]}}] },
+      { what: 'Two bytes as one stream — a 12-bit count, then a 4-bit version',
+        payload: '01 23',
+        spec: [{"read-bits": {"length": 2, "fields": [{"as": "COUNT", "bits": 12}, {"as": "VERSION", "bits": 4}]}}] },
+      { what: 'A part decides — <code>when</code> reads the rest only for one code',
+        payload: '80 41 42',
+        spec: [{"read-bits": {"length": 1, "fields": [{"as": "HAS-NAME", "bits": 1}, {"bits": 7}]}},
+               {"when": {"field": "HAS-NAME", "equal": "1", "then": [{"read-fixed": {"length": 2, "as": "NAME"}}]}}] },
     ],
   },
   'read-until': {
@@ -30794,6 +30833,13 @@ function _mePsLintWarns(item, parsed, inertOut) {
           if (attrs?.as) synthetic.add(attrs.as);
           break;
         }
+        case 'read-bits': {
+          const L = _meBitsLayout(attrs);
+          if (L.error) { warns.push(`[block ${n}] read-bits: ${L.error}`); break; }
+          if (attrs.as) synthetic.add(attrs.as);
+          for (const p of L.parts) if (p.as) synthetic.add(p.as);
+          break;
+        }
         case 'read-length-value': {
           if (attrs?.as) synthetic.add(attrs.as);
           // The length vocabulary is the app's, not this block's own — every
@@ -30976,7 +31022,7 @@ const _PS_RENAMED = {
     + '"prefix" to "length_encoding" and "prefix_len" to "length_size". Nothing is converted automatically.',
 };
 const _PS_KNOWN_BLOCKS = new Set([
-  'read-ddl','read','read-fixed','read-until','read-length-value',
+  'read-ddl','read','read-fixed','read-bits','read-until','read-length-value',
   'read-to-end','read-bitmap','read-bitmap-fields','read-segment-fields','read-tlv',
   'when','repeat','read-while','skip','stop','token-area','map',
 ]);
@@ -40391,6 +40437,74 @@ function _meExecReadFixed(attrs, ctx) {
   ctx.fieldsById[id] = f;
 }
 
+// ── Block: read-bits ────────────────────────────────────────────────────────
+// A byte — or up to eight — split into named parts by their width in bits. The
+// bits run most significant first, the bytes one big-endian stream: bit 0 is
+// the leftmost, as a bitmap counts. A part without "as" is spare — read, never
+// a row. Requested 2026-11-15, from Kaitai's b1/b4 and Construct's BitStruct.
+//
+// The layout is checked here once, for the parse, the lint and Generate alike.
+// Returns { len, parts: [{ as, bits, from }] } or { error }.
+function _meBitsLayout(attrs) {
+  if (!attrs || typeof attrs !== 'object') return { error: 'Missing attributes' };
+  const len = attrs.length;
+  if (!Number.isInteger(len) || len < 1 || len > 8)
+    return { error: `"length" must be a whole number of bytes, 1 to 8 — got ${JSON.stringify(len)}` };
+  if (!Array.isArray(attrs.fields) || !attrs.fields.length)
+    return { error: '"fields" must list the parts, each { "as": NAME, "bits": N }' };
+  const parts = [];
+  let from = 0;
+  for (const [i, p] of attrs.fields.entries()) {
+    const bits = p && typeof p === 'object' ? p.bits : undefined;
+    if (!Number.isInteger(bits) || bits < 1)
+      return { error: `part ${i + 1}: "bits" must be a whole number, 1 or more — got ${JSON.stringify(bits)}` };
+    if (p.as != null && (typeof p.as !== 'string' || !p.as))
+      return { error: `part ${i + 1}: "as" must be a name — got ${JSON.stringify(p.as)}` };
+    parts.push({ as: p.as || null, bits, from });
+    from += bits;
+  }
+  if (from !== 8 * len)
+    return { error: `the parts take ${from} bit(s) and "length" ${len} holds ${8 * len} — they must take every bit` };
+  return { len, parts };
+}
+// "bit 3" · "bits 2–5", and of which block row when it has one.
+const _meBitsWhere = (p, of) => (p.bits > 1 ? `bits ${p.from}–${p.from + p.bits - 1}` : `bit ${p.from}`) + (of ? ` of ${of}` : '');
+
+function _meExecReadBits(attrs, ctx) {
+  const id = attrs?.as || 'read-bits';
+  const L  = _meBitsLayout(attrs);
+  if (L.error) { ctx.fields.push({ id, error: L.error }); return; }
+  const start = ctx.cursor;
+  // The room is the element's inside a "de" entry, as for read-fixed.
+  const roomEnd = ctx._deLimit != null && ctx._deLimit < ctx.bytes.length ? ctx._deLimit : ctx.bytes.length;
+  if (L.len > roomEnd - start) {
+    ctx.fields.push({ id, error: `length ${L.len} exceeds the ${roomEnd - start} byte(s) left — nothing read` });
+    return;
+  }
+  ctx.cursor = start + L.len;
+  // Bits are the bytes as transmitted: an EBCDIC message translates every byte
+  // first, and the flags would read as something else.
+  const fBytes = Array.from(ctx.bytes.slice(start, start + L.len));
+  const wire   = ctx.rawBytes ? Array.from(ctx.rawBytes.slice(start, start + L.len)) : fBytes;
+  if (attrs.as) {
+    const f = _meMakeSyntheticField(attrs.as, fBytes, start, start + L.len - 1, ctx);
+    f.value = '0x' + wire.map(b => b.toString(16).padStart(2, '0').toUpperCase()).join('');
+    ctx.fields.push(f);
+    ctx.fieldsById[attrs.as] = f;
+  }
+  const all = wire.reduce((n, b) => (n << 8n) | BigInt(b), 0n);
+  for (const p of L.parts) {
+    if (!p.as) continue;
+    const v  = (all >> BigInt(8 * L.len - p.from - p.bits)) & ((1n << BigInt(p.bits)) - 1n);
+    const b0 = p.from >> 3, b1 = (p.from + p.bits - 1) >> 3;
+    const f  = _meMakeSyntheticField(p.as, fBytes.slice(b0, b1 + 1), start + b0, start + b1, ctx,
+                                     { description: _meBitsWhere(p, attrs.as) });
+    f.value = String(v);
+    ctx.fields.push(f);
+    ctx.fieldsById[p.as] = f;
+  }
+}
+
 // ── Block: read-until ───────────────────────────────────────────────────────
 
 function _meExecReadUntil(attrs, ctx) {
@@ -43016,6 +43130,7 @@ function _meExecBlockAt(type, attrs, ctx) {
     case 'read-ddl':            return _meExecReadDDL(attrs, ctx);
     case 'read':                return _meExecReadField(attrs, ctx);
     case 'read-fixed':          return _meExecReadFixed(attrs, ctx);
+    case 'read-bits':           return _meExecReadBits(attrs, ctx);
     case 'read-until':          return _meExecReadUntil(attrs, ctx);
     case 'read-length-value':   return _meExecReadLengthValue(attrs, ctx);
     case 'read-to-end':         return _meExecReadToEnd(attrs, ctx);
@@ -43599,6 +43714,7 @@ function _genBlock(type, attrs, g) {
       case 'read':               _genRead(attrs, g); break;
       case 'read-ddl':           _genReadDDL(attrs, g); break;
       case 'read-fixed':         _genReadFixed(attrs, g); break;
+      case 'read-bits':          _genReadBits(attrs, g); break;
       case 'read-until':         _genReadUntil(attrs, g); break;
       case 'read-length-value':  _genReadLengthValue(attrs, g); break;
       case 'read-to-end':        _genReadToEnd(attrs, g); break;
@@ -43930,6 +44046,37 @@ function _genFreeValue(id, g) {
 // The ASCII a sentinel is matched against: the parse compares the message as
 // read, EBCDIC already turned to ASCII.
 const _genAsAscii = (b, g) => g.enc === 'ebcdic' ? (_EBCDIC_TO_ASCII[b] ?? b) : b;
+// read-bits: each part's number in its bits, packed — a spare part is zeros.
+// A value past what the bits hold is cut to the most they hold, and said.
+function _genReadBits(attrs, g) {
+  const id = attrs?.as || 'read-bits', L = _meBitsLayout(attrs);
+  if (L.error) { g.problems.push(`read-bits ${id}: ${L.error} — skipped`); return; }
+  let all = 0n;
+  for (const p of L.parts) {
+    const max = (1n << BigInt(p.bits)) - 1n;
+    const raw = p.as && Object.prototype.hasOwnProperty.call(g.values, p.as) ? String(g.values[p.as]).trim() : '0';
+    let v = /^\d+$/.test(raw) ? BigInt(raw) : null;
+    if (v == null) { g.problems.push(`read-bits ${p.as}: "${raw}" is not a whole number — written as 0`); v = 0n; }
+    if (v > max) { g.problems.push(`read-bits ${p.as}: ${v} does not fit in ${p.bits} bit(s) — cut to ${max}`); v = max; }
+    all = (all << BigInt(p.bits)) | v;
+  }
+  const pos = g.cursor;
+  let bytes = Array.from({ length: L.len }, (_, i) => Number((all >> BigInt(8 * (L.len - 1 - i))) & 0xFFn));
+  // A recognizer over these bytes wins: the parts are what it leaves.
+  bytes = _genRecsOn(g, pos, bytes);
+  _genPut(g, pos, bytes);
+  const hex = b => b.map(x => x.toString(16).padStart(2, '0').toUpperCase()).join('');
+  const wire = bytes.reduce((n, b) => (n << 8n) | BigInt(b), 0n);
+  if (attrs.as) { g.spans[attrs.as] = [pos, L.len]; g.written[attrs.as] = '0x' + hex(bytes); g.hexOf[attrs.as] = hex(bytes); g.lenIds.add(attrs.as); }
+  for (const p of L.parts) {
+    if (!p.as) continue;
+    const b0 = p.from >> 3, b1 = (p.from + p.bits - 1) >> 3;
+    g.spans[p.as] = [pos + b0, b1 - b0 + 1];
+    g.written[p.as] = String((wire >> BigInt(8 * L.len - p.from - p.bits)) & ((1n << BigInt(p.bits)) - 1n));
+    g.hexOf[p.as] = hex(bytes.slice(b0, b1 + 1));
+    (g.bitParts || (g.bitParts = {}))[p.as] = p.bits;
+  }
+}
 // read-until: the value, then — from whatever follows — a sentinel, or the end
 // of the message when eom allows it. A sentinel inside the value is said.
 function _genReadUntil(attrs, g) {
@@ -44766,7 +44913,10 @@ function _genModel(item, values, ascii) {
   const g0 = _genMessage(item, { des: [], values: values || {}, format: fmt });
   const defs = new Map(_genDefs(g0).map(d => [d.id, d]));
   const all = { ...g0.unshown, ...g0.written };
-  const head = Object.keys(all).filter(id => !g0.lenIds.has(id)).map(id => defs.has(id)
+  // A read-bits part is a number as wide as its bits hold.
+  const bitRow = (g, id, v) => ({ id, len: String(2n ** BigInt(g.bitParts[id]) - 1n).length, kind: 'int',
+    max: String(2n ** BigInt(g.bitParts[id]) - 1n), pic: `${g.bitParts[id]} bit${g.bitParts[id] > 1 ? 's' : ''}`, dflt: v });
+  const head = Object.keys(all).filter(id => !g0.lenIds.has(id)).map(id => g0.bitParts?.[id] ? bitRow(g0, id, all[id]) : defs.has(id)
     ? _genLeaf(defs.get(id), g0, all[id])
     : { id, len: String(all[id]).length, kind: 'text', pic: '', dflt: all[id] });
   // A read-while's passes: a row where the loop sits.
@@ -44791,7 +44941,7 @@ function _genModel(item, values, ascii) {
       des[n] = { name: e.def ? e.def.id : e.groupId, leaves: leaves.map(d => _genLeaf(d, g0)) };
       // A DE a "de" entry writes: its rows are what those blocks write.
       if (entries.has(n)) {
-        const leavesOf = (g, base) => Object.keys(g.written).filter(id => !(id in base) && !g.lenIds.has(id)).map(id => defs.has(id)
+        const leavesOf = (g, base) => Object.keys(g.written).filter(id => !(id in base) && !g.lenIds.has(id)).map(id => g.bitParts?.[id] ? bitRow(g, id, g.written[id]) : defs.has(id)
           ? _genLeaf(defs.get(id), g, g.written[id]) : { id, len: String(g.written[id]).length, kind: 'text', pic: '', dflt: g.written[id] });
         // No subfield picked: the DE's own rows. Each subfield its bitmap
         // numbers is picked like a DE, and brings its rows.
@@ -44850,6 +45000,7 @@ function _genPan(n) { const body = '4' + _genRand(Math.max(1, n - 2), '012345678
 // The largest value an increment may reach before it wraps: what the field's
 // digits — or its bytes, for a binary number — can hold.
 function _genIncMax(f) {
+  if (f.max != null) return BigInt(f.max);
   return f.kind === 'int' ? BigInt(256) ** BigInt(Math.max(1, f.len)) - BigInt(1)
                           : BigInt(10) ** BigInt(Math.max(1, Math.min(f.len, 30))) - BigInt(1);
 }

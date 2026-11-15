@@ -222,6 +222,7 @@ The parse_spec is a **declarative traversal algorithm**. The DDL is primary — 
 | `read-ddl` | Read **all fields from the DDL Bindings** in DDL declaration order — no individual field listing needed | `binding` (int index into `ddl_bindings`, or `"ANY"`), `fields`, `from`, `until` — §5.2; `vlg_identifier` — §8; `overrides` — §8.1 |
 | `read` | Read a single DDL-defined field, **or a window of them from the cursor** | `field` (DDL field ID), `from`/`until` (walk a range at the cursor — `from` required, `until` inclusive), `length_prefix` (bytes of length on the wire, absent from the DDL — §5.13), `map` (read this field through another DEF, this read only — §5.22) |
 | `read-fixed` | Read N bytes inline — no DDL ref needed | `length` (int literal OR field ID ref), `type`, `encoding`, `as` (DDL field ID) |
+| `read-bits` | Split 1–8 bytes into named parts by width in bits (§5.4a) | `length` (int, 1–8), `fields` (`[{as, bits}]`, most significant first), `as` (row for the whole bytes) |
 | `read-until` | Read bytes until sentinel(s) or EOM | `sentinels` (list of hex bytes), `eom` (bool), `as` (DDL field ID) |
 | `read-length-value` | Read length N then N bytes | `length_encoding` (any length encoding — §5.17), `length_size` (1–4, when the name implies no width), `count` (`bytes`\|`digits`), `as` (DDL field ID), `sentinels` (optional stop list), `eom` (bool) |
 | `read-bitmap` | Read 8 or 16 bytes as bitmap, store result | `field` (DDL field ID), `encoding` (`binary`\|`ascii-hex`), `length` (explicit width in bytes when the DDL does not declare the map — §5.12) |
@@ -362,6 +363,23 @@ render the same bytes differently.
 | `encoding` | `ascii`     | Printable ASCII, `.` for anything else. The default. |
 | `encoding` | `ebcdic`    | Translated EBCDIC → ASCII. |
 | `encoding` | `bcd` \| `bcd-f` | Packed BCD, two digits a byte — read as the Type column's `bcd` / `bcd-f` (§9): `bcd` shows every nibble, `bcd-f` drops a trailing F pad. A nibble that is not a digit shows every nibble and is reported on the row. |
+
+### 5.4a `read-bits` — named parts of a byte
+
+```json
+{ "read-bits": { "length": 1, "as": "FLAGS", "fields": [
+  { "as": "ONLINE", "bits": 1 }, { "as": "RETRY", "bits": 1 },
+  { "as": "CODE", "bits": 4 }, { "bits": 2 } ] } }
+```
+
+- `length` is a literal 1–8 bytes; the cursor advances by exactly that.
+- The bits run most significant first; several bytes are one big-endian stream. Bit 0 is the leftmost, as a bitmap counts.
+- The parts' `bits` add up to 8 × `length`, or the block reads nothing and says why — at run time and in the lint.
+- Each part with `as` is a row holding its unsigned number (`A5` gives ONLINE 1, RETRY 0, CODE 9), described as `bits 2–5 of FLAGS`. A part without `as` is spare and is never a row.
+- `as` on the block adds a row for the whole bytes, shown as `0x…`.
+- The bits are the wire's: an EBCDIC message is not translated first.
+- A part is a field read like any other: `when`, `repeat`, `length` and the operations of §5.19b take it. Inside a `de` entry the room is the element's.
+- Generate writes each part's number in its bits (0 by default; a value past what they hold is cut to the most they hold, and said). A spare part is zeros.
 
 ### 5.5 `read-until` — multiple stop conditions
 

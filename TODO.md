@@ -1356,7 +1356,13 @@ Also: concrete help examples for `map`, including a full path
 
 ---
 
-## 33. [ ] Bit fields inside a byte
+## 33. [x] Bit fields inside a byte — *done v1.72.0.0*
+
+**Done 2026-11-15** as the `read-bits` block (SPEC §5.4a): 1–8 bytes split into
+named parts by width in bits, most significant first, read off the wire bytes;
+parts are numbers every later block can use; Generate packs them. Left out until
+asked: LSB-first order and a `length` read off the message.
+
 
 **Found 2026-11-14, comparing with other parsers** (Kaitai `b1`/`b4`, Construct
 `BitStruct`). The smallest unit a spec reads is a byte; only bitmaps look at

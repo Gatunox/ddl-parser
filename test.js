@@ -18728,6 +18728,7 @@ const PS_EXEC_FNS = {
   'read-ddl':            ['_meExecReadDDL'],
   'read':                ['_meExecReadField'],
   'read-fixed':          ['_meExecReadFixed'],
+  'read-bits':           ['_meExecReadBits', '_meBitsLayout'],
   'read-until':          ['_meExecReadUntil'],
   'read-length-value':  ['_meExecReadLengthValue'],
   'read-to-end':         ['_meExecReadToEnd'],
@@ -26491,6 +26492,89 @@ console.log('\ngenerate a message');
     r = gen(exItem([{ read: 'CNT' }, { repeat: { count: { field: 'CNT', minus: 1, plus: 1 }, body: [{ 'read-fixed': { length: 1, as: 'R' } }] } }]), {});
     assert.ok(r.problems.some(p => /^repeat: .*one operation per object/.test(p)), JSON.stringify(r.problems));
     eq(r.out.length, 1, 'a repeat whose count is refused still writes its body');
+  }));
+
+  // Bit fields (TODO 33): read-bits splits bytes into named parts by width in
+  // bits, the most significant first.
+  const bitsSpec = (extra = []) => [{ 'read-bits': { length: 1, as: 'FLAGS', fields: [
+    { as: 'ONLINE', bits: 1 }, { as: 'RETRY', bits: 1 }, { as: 'CODE', bits: 4 }, { bits: 2 }] } }, ...extra];
+
+  test('[REGRESSION] read-bits: each part is its number, most significant bit first; a spare part is no row', () => withEx(() => {
+    let fs = parseHex(exItem(bitsSpec([{ 'read-fixed': { length: 1, as: 'NEXT' } }])), 'A5 41');
+    deepEq(errs(fs), [], 'read-bits reports errors');
+    deepEq(fs.map(f => f.id), ['FLAGS', 'ONLINE', 'RETRY', 'CODE', 'NEXT'], 'the rows are not the block, its named parts, then what follows');
+    deepEq([vals(fs).ONLINE, vals(fs).RETRY, vals(fs).CODE], ['1', '0', '9'], 'A5 is not 1 · 0 · 1001 · 01');
+    eq(vals(fs).FLAGS, '0xA5', 'the whole byte is not shown as hex');
+    eq(vals(fs).NEXT, 'A', 'the cursor does not move past the byte');
+    sandbox.__item = exItem(bitsSpec()); sandbox.__b = [0xA5];
+    eq(run(`_meParseFileWithSpec(__item, __b, { format: 'hex', rawBytes: __b }).fields.find(f => f.id === 'CODE').description`),
+      'bits 2–5 of FLAGS', 'a part does not say which bits it is');
+    // Several bytes are one stream; a part may cross a byte.
+    fs = parseHex(exItem([{ 'read-bits': { length: 2, fields: [{ as: 'COUNT', bits: 12 }, { as: 'V', bits: 4 }] } }]), '01 23');
+    deepEq([vals(fs).COUNT, vals(fs).V], ['18', '3'], '01 23 is not COUNT 0x012 · V 3');
+    eq(byId(fs, 'COUNT').endByte, 1, 'a part crossing a byte does not end in the second');
+    eq(fs.some(f => f.id === 'read-bits'), false, 'without "as" the whole bytes are a row');
+    // On an EBCDIC message the bits are the wire's, not the translated byte.
+    sandbox.__item = exItem(bitsSpec()); sandbox.__b = [0xC1];
+    const eb = JSON.parse(run(`JSON.stringify(_meParseFileWithSpec(__item, __b.map(b => _EBCDIC_TO_ASCII[b] ?? b), { format: 'ebcdic', rawBytes: __b }).fields.map(f => f.value))`));
+    deepEq(eb, ['0xC1', '1', '1', '0', ], 'read-bits on an EBCDIC message does not read the wire byte');
+  }));
+
+  test('[REGRESSION] read-bits: a part decides a when, sizes a read and counts a repeat', () => withEx(() => {
+    const spec = [{ 'read-bits': { length: 1, fields: [{ as: 'HAS', bits: 1 }, { as: 'N', bits: 3 }, { as: 'K', bits: 4 }] } },
+      { when: { field: 'HAS', equal: '1', then: [{ 'read-fixed': { length: 'N', as: 'NAME' } }] } },
+      { repeat: { count: { field: 'K', minus: 1 }, body: [{ 'read-fixed': { length: 1, as: 'R' } }] } }];
+    let fs = parseHex(exItem(spec), 'A3' + asc('ABxy'));   // 1 · 010 · 0011
+    deepEq(errs(fs), [], 'a part used as a number reports errors');
+    eq(vals(fs).NAME, 'AB', 'N is not the length of NAME');
+    eq(fs.filter(f => f.id === 'R').length, 2, 'K minus 1 is not the repeat count');
+    fs = parseHex(exItem(spec), '21' + asc('Q'));            // 0 · 010 · 0001
+    eq(fs.some(f => f.id === 'NAME'), false, 'HAS 0 still took the when');
+  }));
+
+  test('[REGRESSION] read-bits: a layout that does not take every bit, or runs past the data, reads nothing and says why', () => withEx(() => {
+    const rb = (a, hex = 'FF FF') => errs(parseHex(exItem([{ 'read-bits': a }]), hex)).join(' | ');
+    assert.ok(/the parts take 7 bit\(s\) and "length" 1 holds 8/.test(rb({ length: 1, fields: [{ as: 'A', bits: 7 }] })), rb({ length: 1, fields: [{ as: 'A', bits: 7 }] }));
+    assert.ok(/"length" must be a whole number of bytes, 1 to 8/.test(rb({ length: 9, fields: [{ bits: 72 }] })));
+    assert.ok(/"length" must be/.test(rb({ length: 'LEN', fields: [{ bits: 8 }] })), 'a length from a field is accepted');
+    assert.ok(/"fields" must list the parts/.test(rb({ length: 1 })));
+    assert.ok(/part 2: "bits" must be a whole number, 1 or more/.test(rb({ length: 1, fields: [{ bits: 8 }, { bits: 0 }] })));
+    assert.ok(/part 1: "as" must be a name/.test(rb({ length: 1, fields: [{ as: 3, bits: 8 }] })));
+    assert.ok(/length 2 exceeds the 1 byte\(s\) left/.test(rb({ length: 2, fields: [{ as: 'A', bits: 16 }] }, 'FF')));
+    const w = mePsLintWarns(exItem([]), [{ 'read-bits': { length: 1, fields: [{ as: 'A', bits: 4 }] } },
+      { 'read-fixed': { length: 'A', as: 'B' } }]).join(' | ');
+    assert.ok(/\[block 1\] read-bits: the parts take 4 bit\(s\)/.test(w), w);
+    const ok = mePsLintWarns(exItem([]), [...bitsSpec(), { 'read-fixed': { length: 'CODE', as: 'B' } }]).join(' | ');
+    eq(/CODE|read-bits/.test(ok), false, `a part is not a field later blocks may name: ${ok}`);
+  }));
+
+  test('[REGRESSION] read-bits: inside a "de" entry the room is the element\'s, and Generate writes it', () => withBcd(() => {
+    const deItem = blocks => { const item = bcdItem({ 'DE-5': {} });
+      item.parse_spec_binary[2] = { 'read-bitmap-fields': { bitmap: 'PBIT-MAP', de: { '5': blocks } } }; return item; };
+    const two = () => deItem([{ 'read-bits': { length: 2, fields: [{ as: 'HI', bits: 4 }, { as: 'LO', bits: 12 }] } }]);
+    const fs = parseHex(two(), '0200 0800000000000000 F00A');
+    deepEq(probs(fs), [], 'read-bits in a de entry reports problems');
+    deepEq([byId(fs, 'HI').value, byId(fs, 'LO').value], ['15', '10'], 'F0 0A is not HI 15 · LO 10');
+    const over = probs(parseHex(deItem([{ 'read-bits': { length: 3, fields: [{ as: 'HI', bits: 24 }] } }]), '0200 0800000000000000 F00A 41'));
+    assert.ok(over.some(p => /exceeds the 2 byte\(s\) left/.test(p)), `a read past the element is not refused: ${JSON.stringify(over)}`);
+    const r = gen(two(), { des: [5], values: { HI: '15', LO: '10' } });
+    deepEq(clean(r), [], 'read-bits in a de entry does not round-trip');
+    deepEq(r.out.slice(-2), [0xF0, 0x0A], 'the parts are not packed into the element');
+  }));
+
+  test('[REGRESSION] generate: read-bits packs each part in its bits, and the dialog offers each as a number', () => withEx(() => {
+    const r = gen(exItem(bitsSpec([{ 'read-fixed': { length: 1, as: 'NEXT' } }])), { values: { ONLINE: '1', CODE: '9', NEXT: 'A' } });
+    deepEq(clean(r), [], 'read-bits does not round-trip');
+    deepEq(r.out, [0xA4, 0x41], 'ONLINE 1 · RETRY 0 · CODE 9 · spare 00 is not A4');
+    const big = gen(exItem(bitsSpec()), { values: { CODE: '20', RETRY: 'x' } });
+    assert.ok(big.problems.some(p => /read-bits CODE: 20 does not fit in 4 bit\(s\) — cut to 15/.test(p)), JSON.stringify(big.problems));
+    assert.ok(big.problems.some(p => /read-bits RETRY: "x" is not a whole number — written as 0/.test(p)), JSON.stringify(big.problems));
+    deepEq(big.out, [0x3C], 'a value too big is not cut to the most its bits hold');
+    sandbox.__item = exItem(bitsSpec());
+    const m = JSON.parse(run('JSON.stringify(_genModel(__item, {}, false).head)'));
+    deepEq(m.map(f => f.id), ['ONLINE', 'RETRY', 'CODE'], 'the dialog does not offer each named part, and only those');
+    deepEq([m[2].kind, m[2].max, m[2].pic, m[2].dflt], ['int', '15', '4 bits', '0'], 'a part is not a number as wide as its bits');
+    eq(run(`String(_genIncMax({ kind: 'int', len: 1, max: '15' }))`), '15', 'an increment on a part does not wrap past what its bits hold');
   }));
 
   test('[REGRESSION] Help → Generate names what is not generated today, not what was in stage 1', () => {

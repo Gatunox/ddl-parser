@@ -9276,6 +9276,16 @@ function _meBcdPad(type) {
   const t = String(type || '').trim().toLowerCase();
   return t === 'bcd' ? 'L' : t === 'bcd-f' ? 'R' : null;
 }
+// A `read` block's own BCD `type` sizes the field — half its digits — as the
+// same type in Overrides does. The size is decided from the overrides in
+// effect, which an inline type is not part of, so it is laid over the block's
+// overrides for that field. The block runner puts them back when the block
+// ends, in the parse and in Generate alike. Any other type: nothing.
+function _meInlineBcdOverride(ctx, id, type) {
+  if (!_meBcdPad(type)) return;
+  const prev = ctx.blockOverrides, k = _canonFieldId(id);
+  ctx.blockOverrides = { ...(prev || {}), [k]: { ...((prev && prev[k]) || {}), type } };
+}
 // BCD nibbles → the number they hold. `digits` is how many digits the field
 // holds (the DDL's 9(n), or what a length counting digits said); the nibbles
 // beyond them are the pad. Without it, `bcd` keeps every nibble and `bcd-f`
@@ -23772,7 +23782,7 @@ function initTreePaneResizer() {
 // ============================================================
 // APP INFO
 // ============================================================
-const APP_VERSION  = '1.72.1.0';
+const APP_VERSION  = '1.73.0.0';
 const FEEDBACK_EMAIL = 'ddl-parser@gu2.dev';
 
 function openFeedbackMail(type) {
@@ -27549,6 +27559,7 @@ const _mePsHelpHtml   = () => _meHelpHtml('ps');
 const _PS_OVERRIDES_DESC = [
   'Overrides carried <b>by the spec itself</b>, in the same shape the Overrides panel stores.',
   ['<code>{"MSGTYPE": {"type": "hex-char"}}</code>', 'Read that field as hex characters.'],
+  ['<code>{"MSGTYPE": {"type": "bcd"}}</code>',      'Read it as packed BCD — sized by its digits, so a 9(4) takes 2 bytes, and a nibble that is not a digit is said. <code>"bcd-f"</code> for an F pad behind.'],
   ['<code>{"MSGTYPE": {"bytes": 2}}</code>',         'Re-size it — the bytes it frees go to the next field, exactly as in the panel.'],
   ['<code>{"DE-64": {"de": 66}}</code>',             'Anchor a Data Element number; the ones after it follow.'],
   ['<code>{"PAD-1": {"de": false}}</code>',          'Not a data element — and the counter does <b>not</b> advance, so the tail closes up rather than leaving a hole.'],
@@ -27620,6 +27631,7 @@ const _PS_NUMBASE_DESC = [
   'A field reference is read as <b>base 10</b> unless it says otherwise. <code>":h"</code> reads its characters as <b>hex</b>, <code>":o"</code> as <b>octal</b> — <code>"LEN:h"</code>, <code>"LEN:o"</code>.',
   ['<code>"10:h"</code> · <code>"10:o"</code>', 'Digits before the suffix are a <b>literal</b> in that base — 16 and 8. Always a literal, never a field that happens to be named in digits; a numeric field id takes <code>{"field": "63", "base": "h"}</code>.'],
   'A <b>base</b> reinterprets the field\'s <b>characters</b>; <code>as</code> reinterprets its <b>bytes</b>. A field holding the text <code>"12"</code> is <b>12</b> in base 10, <b>18</b> with <code>:h</code>, and <b>12594</b> as <code>{"as": "uint16-be"}</code>. An ASCII hex length wants a base; a binary counter wants <code>as</code>.',
+  ['<code>{"field": "LEN", "as": "bcd"}</code>', 'The bytes as packed BCD — <code>00 12</code> is <b>12</b>. <code>"hex-char"</code> reads them the same way. Bytes that are not all digits — <code>00 FF</code> — are an error, never a number made from the digits before the F.'],
   'A field that is <b>not a number in the base asked for is an error</b>, naming the field and both ways out. It is never guessed: reading the bytes as hex whenever the text did not look like digits is what made a BINARY 16 counter parse as a plausible unrelated decimal and truncate a services loop.',
 ];
 
@@ -27907,6 +27919,7 @@ const _PS_HELP = {
       'Length and type come from the DDL; the read itself happens at the cursor.',
       'A <b>group</b> reads all of its sub-fields sequentially; a group with OCCURS loops automatically.',
       'The optional <code>type</code> attribute changes how the bytes are interpreted — but an inline type\'s byte size <b>must equal</b> the declared length, or a warning is emitted and the override is ignored.',
+      'A <b>BCD</b> type is the exception: <code>bcd</code> and <code>bcd-f</code> are sized by the DDL\'s digits — a <code>9(4)</code> is read in 2 bytes — exactly as in the Overrides panel.',
       'That length rule applies to the inline attribute only. A per-field override set in the Overrides panel re-sizes the field instead, because it stands in for an edit to the DDL.',
     ],
     useWhen: [
@@ -27950,10 +27963,15 @@ const _PS_HELP = {
         ['<code>ascii</code>',     'Render the bytes as printable ASCII.'],
         ['<code>ebcdic</code>',    'Translate EBCDIC → ASCII.'],
         ['<code>binary</code>',    'Raw hex dump, <code>0x…</code>.'],
-        ['<code>hex-char</code>',  'The bytes as their hex characters — TAL <i>binary^hexchar</i>: <code>00 13</code> → "0013".'],
-        ['<code>hex-ascii-decimal</code>',  'The field holds hex digits as TEXT — decode the text, then read base-16: "00FF" → 255.'],
-        ['<code>hex-ebcdic-decimal</code>', 'The same, for a field whose digits are EBCDIC.'],
-        'The same set is available per-field in the Overrides section. The inline attribute wins when both are set.',
+        ['<code>hex-char</code>',  'The bytes as their hex characters — TAL <i>binary^hexchar</i>: <code>00 13</code> → "0013". On BCD bytes it shows the same digits, but it is sized in bytes, keeps the pad and says nothing of a nibble that is not a digit: <code>00 FF</code> → "00FF", silently. For a number in BCD, use <code>bcd</code>.'],
+        ['<code>hex-ascii-decimal</code>',  'The field holds hex digits written as <b>text</b>, one character a digit — decode the characters, then read them base-16: <code>30 30 46 46</code> is the text "00FF" → <b>255</b>.'],
+        ['<code>hex-ebcdic-decimal</code>', 'The same, the characters in EBCDIC: <code>F0 F0 C6 C6</code> is "00FF" → <b>255</b>. Use it when the message is EBCDIC and the hex digits are characters in it.'],
+        '<b>Sized by digits</b> — the DDL\'s <code>9(n)</code> says how many digits; the field is read in half that many bytes, two digits a byte:',
+        ['<code>bcd</code>',   'Packed BCD, a digit per nibble; an odd count has a <b>0 in front</b>. <code>9(4)</code> <code>02 00</code> → "0200"; <code>9(3)</code> <code>01 23</code> → "123". A nibble that is not a digit — <code>00 FF</code> — is shown as it is, "00FF", and the row says it is not BCD.'],
+        ['<code>bcd-f</code>', 'The same, the pad an <b>F behind</b>: <code>9(3)</code> <code>12 3F</code> → "123".'],
+        'The same bytes <code>00 FF</code>, three ways: <code>hex-char</code> "00FF" with nothing said · <code>bcd</code> "00FF", flagged as not BCD · <code>hex-ascii-decimal</code> does not apply — it wants the <b>text</b> "00FF", four bytes, and gives 255.',
+        '<b>Why BCD takes no ascii / ebcdic:</b> <code>ascii</code>, <code>ebcdic</code> and the <code>hex-…-decimal</code> pair say which character set the digits are written in, because there each digit is a whole byte — "1" is <code>31</code> in ASCII, <code>F1</code> in EBCDIC. In BCD, and in <code>hex-char</code>, a digit is half a byte: <code>01 23</code> is 0123 on any host, so there is nothing to translate. They are read from the bytes as they came, never from an EBCDIC translation.',
+        'The Overrides panel offers the same types, and <code>uint-be</code> / <code>uint-le</code>, which take their width from the field. The inline attribute wins when both are set.',
       ]],
     ],
     examples: [
@@ -27992,6 +28010,26 @@ const _PS_HELP = {
         def: 'MSG',
         payload: '31 32 30 30 00 05',
         spec: [{"read": "MTI"}, {"read": {"field": "TIM-OFST", "type": "BINARY 16"}}] },
+      { what: '<b>type</b> bcd / bcd-f — packed BCD sized by the DDL\'s digits: the 9(4) MTI is 2 bytes, 02 00 → "0200"; the 9(3) amount is 2 bytes too, its F pad dropped, 12 3F → "123"',
+        ddl: 'DEFINITION MSG.\n  02 MTI PIC 9(4).\n  02 AMOUNT PIC 9(3).\n  02 TAIL PIC X(2).\nEND\n',
+        def: 'MSG',
+        payload: '02 00 12 3F 4F 4B',
+        spec: [{"read": {"field": "MTI", "type": "bcd"}}, {"read": {"field": "AMOUNT", "type": "bcd-f"}}, {"read": "TAIL"}] },
+      { what: '<b>type</b> bcd on bytes that are not BCD — 00 FF is shown as it is, "00FF", and the row says why; hex-char would show the same "00FF" and say nothing',
+        ddl: 'DEFINITION MSG.\n  02 MTI PIC 9(4).\nEND\n',
+        def: 'MSG',
+        payload: '00 FF',
+        spec: [{"read": {"field": "MTI", "type": "bcd"}}] },
+      { what: '<b>type</b> hex-char vs bcd — the same 2-byte field 01 00, both read "0100". hex-char needs the field declared 2 bytes; bcd takes the size from the 9(4)',
+        ddl: 'DEFINITION MSG.\n  02 RAW PIC X(2).\n  02 NUM PIC 9(4).\nEND\n',
+        def: 'MSG',
+        payload: '01 00 01 00',
+        spec: [{"read": {"field": "RAW", "type": "hex-char"}}, {"read": {"field": "NUM", "type": "bcd"}}] },
+      { what: '<b>type</b> hex-ascii-decimal and hex-ebcdic-decimal — the hex digits are TEXT: "00FF" in ASCII (30 30 46 46) and in EBCDIC (F0 F0 C6 C6), both 255',
+        ddl: 'DEFINITION MSG.\n  02 HA PIC X(4).\n  02 HE PIC X(4).\nEND\n',
+        def: 'MSG',
+        payload: '30 30 46 46 F0 F0 C6 C6',
+        spec: [{"read": {"field": "HA", "type": "hex-ascii-decimal"}}, {"read": {"field": "HE", "type": "hex-ebcdic-decimal"}}] },
       { what: '<b>length_prefix</b> — 2 bytes of length on the wire that the DDL never declares; they frame the group and are emitted as their own row',
         ddl: 'DEFINITION MSG.\n  02 XXX-ELEMENT.\n    04 TAG PIC X(2).\n    04 DATA PIC X(10).\nEND\n',
         def: 'MSG',
@@ -28043,6 +28081,7 @@ const _PS_HELP = {
         ['<code>bcd</code>',    'Packed BCD, a digit per nibble: <code>01 23</code> is 0123. <code>length</code> is in bytes, so every nibble is shown.'],
         ['<code>bcd-f</code>',  'The same, with an F pad behind dropped: <code>12 3F</code> is 123.'],
         'A nibble that is not a digit shows every nibble and is reported on the row.',
+        'BCD needs no ascii / ebcdic beside it: a digit is a nibble, the same on any host, read from the bytes as they came.',
         '<code>type: "BINARY"</code> wins over any encoding: raw bytes have no character form.',
       ]],
       ['as', 'string', false, [
@@ -28067,6 +28106,12 @@ const _PS_HELP = {
       { what: '<b>encoding</b> ascii on the very same bytes, for contrast',
         payload: 'C1 C2 C3',
         spec: [{"read-fixed": {"length": 3, "encoding": "ascii", "as": "MTI"}}] },
+      { what: '<b>encoding</b> bcd — 2 bytes of packed BCD, 02 00, are the MTI "0200"',
+        payload: '02 00',
+        spec: [{"read-fixed": {"length": 2, "encoding": "bcd", "as": "MTI"}}] },
+      { what: '<b>encoding</b> bcd-f — an odd count of digits, the F pad behind dropped: 12 3F is "123"',
+        payload: '12 3F',
+        spec: [{"read-fixed": {"length": 2, "encoding": "bcd-f", "as": "AMOUNT"}}] },
       { what: '<b>type</b> BINARY — the same 3 bytes as a hex dump instead of characters',
         payload: '41 42 43',
         spec: [{"read-fixed": {"length": 3, "type": "BINARY", "as": "RAW"}}] },
@@ -28189,19 +28234,20 @@ const _PS_HELP = {
     useWhen: [
       'The length is <b>anonymous binary bytes</b> sitting in front of the payload — no DDL field, no name.',
       'You want <b>one atomic block</b> instead of <code>read + read-fixed</code>.',
-      'The length is encoded as a <b>fixed-width binary integer</b> (<code>uint8</code>, <code>uint16-be</code>, <code>uint16-le</code>) or <b>BCD</b> (<code>bcd2</code>).',
+      'The length is encoded as a <b>fixed-width binary integer</b> (<code>uint8</code>, <code>uint16-be</code>, <code>uint16-le</code>) or <b>BCD</b> (<code>bcd2</code>, or <code>bcd</code> / <code>hex-char</code> with <code>length_size</code>).',
       'You need <b>early termination</b> via sentinels or end-of-message (the declared length might be wrong / lenient).',
     ],
     attrs: [
       ['length_encoding', 'length encoding', true, [
         'How the length itself is encoded. These bytes are consumed but not emitted.',
-        'Any encoding the <b>Type</b> column offers reads a length here — <code>hex-char</code>, <code>ascii</code>, <code>ebcdic</code>, <code>hex-ascii-decimal</code>, <code>hex-ebcdic-decimal</code>, the <code>uint</code> family — plus <code>bcd2</code>, which is this block\'s alone.',
+        'Any encoding the <b>Type</b> column offers reads a length here — <code>hex-char</code>, <code>bcd</code>, <code>bcd-f</code>, <code>ascii</code>, <code>ebcdic</code>, <code>hex-ascii-decimal</code>, <code>hex-ebcdic-decimal</code>, the <code>uint</code> family — plus <code>bcd2</code>, which is this block\'s alone.',
         ['<code>uint8</code>',     '1 byte, 0–255.'],
         ['<code>uint16-be</code>', '2 bytes, big-endian — <code>00 05</code> is 5.'],
         ['<code>uint16-le</code>', '2 bytes, little-endian — <code>05 00</code> is 5.'],
-        ['<code>bcd2</code>',      '2 bytes of packed BCD — <code>00 05</code> is 5, <code>01 23</code> is 123.'],
-        ['<code>hex-char</code>',  'The bytes\' hex <i>spelling</i>, read as a decimal number — <code>00 74</code> is <b>74</b>, not 116.'],
-        ['<code>ascii</code> / <code>ebcdic</code>', 'The length is written as text digits.'],
+        ['<code>bcd2</code>',      '2 bytes of packed BCD — <code>00 05</code> is 5, <code>01 23</code> is 123. Shorthand for <code>bcd</code> with <code>length_size</code> 2.'],
+        ['<code>bcd</code> · <code>bcd-f</code>', 'Packed BCD of any width, set by <code>length_size</code> — <code>00 74</code> is <b>74</b>; <code>bcd-f</code> drops an F pad behind, <code>07 4F</code> is 74. A nibble that is not a digit is an error.'],
+        ['<code>hex-char</code>',  'The bytes\' hex <i>spelling</i>, read as a decimal number — <code>00 74</code> is <b>74</b>, not 116. On a length it reads BCD exactly as <code>bcd</code> does: a length cannot hold an a–f nibble, so either name refuses one.'],
+        ['<code>ascii</code> / <code>ebcdic</code>', 'The length is written as text digits — <code>30 37</code> or <code>F0 F7</code> is 7. BCD needs neither: its digits are nibbles, the same on any host.'],
         'Those four at the top carry their own width; every other name needs <code>length_size</code>.',
       ]],
       ['length_size', '1 | 2 | 3 | 4', false, [
@@ -28247,6 +28293,16 @@ const _PS_HELP = {
       { what: '<b>length_encoding</b> bcd2 — packed decimal: 00 04 is four, not 0x0004 read as binary',
         payload: '00 04 41 42 43 44',
         spec: [{"read-length-value": {"length_encoding": "bcd2", "as": "PAYLOAD"}}] },
+      { what: '<b>length_encoding</b> bcd with <b>length_size</b> — a 3-byte BCD length, 00 00 05, says five',
+        payload: '00 00 05 41 42 43 44 45',
+        spec: [{"read-length-value": {"length_encoding": "bcd", "length_size": 3, "as": "PAYLOAD"}}] },
+      { what: '<b>length_encoding</b> bcd-f — an odd count of digits with an F pad behind: 00 4F is 004, four bytes',
+        payload: '00 4F 41 42 43 44',
+        spec: [{"read-length-value": {"length_encoding": "bcd-f", "length_size": 2, "as": "PAYLOAD"}}] },
+      { what: '<b>length_encoding</b> bcd refuses a length that is not BCD — 00 FF has an F where a digit should be',
+        payload: '00 FF 41',
+        expectError: true,
+        spec: [{"read-length-value": {"length_encoding": "bcd", "length_size": 2, "as": "PAYLOAD"}}] },
       { what: '<b>sentinels</b> cut the payload short — the length says 6, but 0x26 appears after 2',
         payload: '00 06 41 42 26 43 44 45',
         spec: [{"read-length-value": {"length_encoding": "uint16-be", "as": "PAYLOAD", "sentinels": ["0x26", "0x20"]}}] },
@@ -28499,6 +28555,7 @@ const _PS_HELP = {
           'Read this many bytes of length first, then frame the element to what they say. Those bytes are emitted as their own row.',
           ['<code>2</code>', 'Two bytes of length, encoding auto-detected.'],
           ['<code>{"bytes": 2, "type": "hex-char"}</code>', 'The same, with the encoding stated. Auto-detect cannot tell <code>00 74</code> meaning 74 from the same bytes meaning 116, so state it whenever you know. <code>"count": "digits"</code> works here too.'],
+          ['<code>{"bytes": 2, "type": "bcd"}</code>', 'A BCD length — <code>00 74</code> is 74, as with hex-char; <code>"bcd-f"</code> for an F pad behind.'],
           'This <b>frames</b> the whole entry, so every block in it shares the one window. <code>read-length-value</code> instead <b>captures</b> the payload as a single row.',
         ]),
       ]],
@@ -30436,7 +30493,7 @@ function _mePsNearestAttr(name, allowed) {
   return bestD <= 2 ? best : null;
 }
 
-const _PS_VALID_TYPES_RE =/^(uint8|byte|uint16(-be|-le)?|word|uint32(-be|-le)?|dword|binary(\s*(8|16|32|64))?|ascii|ebcdic|hex-char|hex-ascii-decimal|hex-ebcdic-decimal)$/i;
+const _PS_VALID_TYPES_RE =/^(uint8|byte|uint16(-be|-le)?|word|uint32(-be|-le)?|dword|binary(\s*(8|16|32|64))?|ascii|ebcdic|hex-char|hex-ascii-decimal|hex-ebcdic-decimal|bcd|bcd-f)$/i;
 
 // Rendering is separate from the checking so the rules are testable — the old
 // shape bailed out when the DOM element was absent, which is every test run.
@@ -30849,10 +30906,10 @@ function _mePsLintWarns(item, parsed, inertOut) {
           // Asked of the decoder's own predicates rather than a third list of
           // type names — a list here would drift from the one doing the reading.
           const p = String(attrs?.length_encoding || '').trim();
-          const known = /^bcd2$/i.test(p) || _meLenTypeIsInt(p) || _meLenTypeIsHexChar(p)
+          const known = /^bcd2$/i.test(p) || _meLenTypeIsInt(p) || _meLenTypeIsHexChar(p) || !!_meBcdPad(p)
                      || _meLenTypeIsAscii(p) || _meLenTypeIsEbcdic(p) || _meLenTypeIsHexText(p);
           if (p && !known)
-            warns.push(`[block ${n}] read-length-value "length_encoding": "${p}" is not a length encoding — use one of ${_ME_TYPE_OPTS.filter(t => t && !_meBcdPad(t)).join(', ')}, or bcd2`);
+            warns.push(`[block ${n}] read-length-value "length_encoding": "${p}" is not a length encoding — use one of ${_ME_TYPE_OPTS.filter(t => t).join(', ')}, or bcd2`);
           if (attrs?.length_size != null && !(Number.isInteger(+attrs.length_size) && +attrs.length_size >= 1 && +attrs.length_size <= 4))
             warns.push(`[block ${n}] read-length-value "length_size" must be 1, 2, 3 or 4, got ${JSON.stringify(attrs.length_size)}`);
           if (p && attrs?.length_size == null && _mePrefixWidth(p, null) == null)
@@ -34888,6 +34945,9 @@ const _FM_HELP = {
       ['bcd',           'PIC 9(3)',       '0123',             '[01]#',                          '123',      'packed BCD, 2 bytes for 3 digits — the leading 0 is the pad'],
       ['bcd',           'PIC 9(6)',       '123456',           '[12]4V',                         '123456',   'an even count has no pad: 3 bytes'],
       ['bcd-f',         'PIC 9(3)',       '123F',             '[12]?',                          '123',      'the pad is an F behind'],
+      ['bcd',           'PIC 9(4)',       '00FF',             '[00][ff]',                       '00FF',     'not BCD — every nibble shown, and the row says so'],
+      ['hex-char',      'PIC X(2)',       '00FF',             '[00][ff]',                       '00FF',     'the same bytes as hex-char: the same text, nothing said'],
+      ['hex-ebcdic-decimal', 'PIC X(4)',  'F0F0C6C6',         '[f0][f0][c6][c6]',               '255',      'the text "00FF" in EBCDIC → parsed base-16'],
     ],
     attrs: [
       ['(DDL default)', 'the empty entry', false, [
@@ -34918,20 +34978,24 @@ const _FM_HELP = {
         'The value IS the hex characters of the raw bytes — TAL\'s <code>binary^hexchar</code>.',
         'No <code>0x</code> prefix and no charset conversion: <code>0013</code> stays the four characters 0, 0, 1, 3.',
         'Works on any bytes, printable or not.',
+        '<b>On BCD bytes it shows the same digits as <code>bcd</code></b> — <code>01 00</code> is "0100" either way. The difference: hex-char is sized in bytes (the field\'s Size), keeps the pad nibble, and says nothing of a nibble that is not a digit — <code>00 FF</code> is "00FF", silently. For a numeric field in BCD, <code>bcd</code> sizes it from the digits and flags bad data; hex-char is for bytes that may hold anything — a flag byte, a binary id.',
       ]],
       ['hex-ascii-decimal', 'any width', false, [
         'The field holds the <b>text</b> of a hex number in ASCII; parse that text base-16.',
-        'So <code>"00FF"</code> — four ASCII characters — is the number 255, and <code>"1234"</code> is 4660, not one thousand two hundred and thirty-four.',
+        'So <code>"00FF"</code> — four ASCII characters, <code>30 30 46 46</code> — is the number 255, and <code>"1234"</code> is 4660, not one thousand two hundred and thirty-four.',
+        'Not for the bytes <code>00 FF</code>: those are two bytes, not the text "00FF". Their hex spelling is <code>hex-char</code>, or <code>bcd</code> on a number.',
       ]],
       ['hex-ebcdic-decimal', 'any width', false, [
-        'The same, for hex text that arrives in EBCDIC.',
-        'The bytes are translated out of EBCDIC first, then read base-16.',
+        'The same, for hex text that arrives in EBCDIC: each hex digit is one EBCDIC character — 0–9 are <code>F0</code>–<code>F9</code>, A–F are <code>C1</code>–<code>C6</code>.',
+        'So <code>F0 F0 C6 C6</code> is the text "00FF" and the number 255; <code>F1 F2 F3 F4</code> is "1234", 4660.',
+        'The bytes are translated out of EBCDIC first, then read base-16. Pick it over hex-ascii-decimal when the message is EBCDIC; on the wrong one the characters are not hex digits and the value is not a number.',
       ]],
       ['bcd', 'half the digits', false, [
         'Packed BCD: two digits a byte, one per nibble. An odd count is padded with a <b>0 in front</b>.',
         'The field is <b>re-sized</b> to half its declared digits, rounded up — <code>PIC 9(6)</code> is 3 bytes, <code>9(3)</code> is 2 — and the fields after it move with it. A <b>Size</b> override still wins.',
         'The digits it holds are the DDL\'s — or, when a length counting digits sizes it, what that length says — so the pad nibble is dropped. A nibble that is not a digit shows every nibble and is reported on the row.',
-        'A BCD <b>length</b> in front of a field is read with <code>hex-char</code>, counting digits when it counts digits.',
+        'A BCD <b>length</b> in front of a field takes <code>bcd</code> or <code>hex-char</code> — both read its digits — counting digits when it counts digits.',
+        '<b>No ascii / ebcdic to pick:</b> those say which character set a digit is written in, because there a digit is a whole byte. In BCD a digit is half a byte, the same on every host, and it is read from the bytes as they came — an EBCDIC message does not change it.',
       ]],
       ['bcd-f', 'half the digits', false, [
         'The same, with the pad an <b>F behind</b>: <code>12 3F</code> is 123.',
@@ -39569,6 +39633,7 @@ function _meExecReadWindow(attrs, ctx) {
   for (let i = start; i <= end; i++) {
     const d = defs[i];
     if (!(d.length > 0)) continue;              // group rows carry no bytes of their own
+    _meInlineBcdOverride(ctx, d.id, attrs.type);
     const f = _meReadOneFieldFromDef({ ...d, offset: undefined }, ctx);
     if (!f) {
       // The reader returns nothing at the end of the data and says nothing, so
@@ -39964,6 +40029,7 @@ function _meExecReadField(attrs, ctx) {
         // Only the PAYLOAD leaf answers to the element's name. The length is what
         // frames it, never what it holds — mapping that would read the counter
         // as the content.
+        _meInlineBcdOverride(ctx, d.id, typeOverride);
         const f = _meReadOneFieldFromDef({ ...d, offset: undefined }, ctx,
           _meVlgIsLen(_lenId, d.id) ? null : _soloPayload);
         if (!f) return;
@@ -39987,6 +40053,7 @@ function _meExecReadField(attrs, ctx) {
   // position; `at` overrides position explicitly. Reading at declared offsets
   // made `skip` inert: skip 9 moved the cursor and the next read jumped back to
   // offset 0 anyway, so a spec could not step over a header the DDL omits.
+  _meInlineBcdOverride(ctx, def.id, typeOverride);
   const f = _meReadOneFieldFromDef(
     { ...def, offset: undefined,
       ...(lpWindow != null ? { length: Math.min(def.length || 0, lpWindow) } : {}) }, ctx);
@@ -40312,9 +40379,13 @@ function _meNumRefBase(ref, ctx) {
   if (declared) {
     const tmp = { id, rawHex: f.rawHex, rawBytes: f.rawBytes, value: f.value };
     try { Object.assign(tmp, _meReadApplyTypeOverride(tmp, declared) || {}); } catch (e) {}
-    const n = typeof tmp.value === 'number' ? tmp.value : parseInt(String(tmp.value).replace(/^0x/i, ''), tmp.value && /^0x/i.test(String(tmp.value)) ? 16 : 10);
-    if (Number.isFinite(n)) return { id, n, as: declared };
-    return { id, error: `'${id}' cannot be read as ${declared}` };
+    // The whole value, or no number: parseInt stopped at the first non-digit,
+    // so 00 FF read as hex-char or bcd ("00FF") came out as 0, silently.
+    const v = String(tmp.value ?? '').trim(), hx = /^0x/i.test(v);
+    const n = typeof tmp.value === 'number' ? tmp.value
+      : (hx ? /^0x[0-9a-f]+$/i : /^\d+$/).test(v) ? parseInt(v.replace(/^0x/i, ''), hx ? 16 : 10) : NaN;
+    if (Number.isFinite(n) && !tmp.issue) return { id, n, as: declared };
+    return { id, error: `'${id}' cannot be read as ${declared}${v ? ` — it holds "${v}", which is not a number` : ''}` };
   }
 
   // Nothing stated: DECIMAL, and an error if it is not one. This is where the
@@ -43932,10 +44003,12 @@ function _genRead(attrs, g) {
   const def = defs.find(d => d.id === id);
   // A field read at the cursor, as the parse reads it; a group reads its leaves
   // in order. Under a length prefix a text leaf takes only what its value needs.
+  // A BCD type sizes the field as the parse does: half its digits.
+  const put = (d, w) => { _meInlineBcdOverride(g, d.id, o.type); _genField(typed(d), g.cursor, g, w); };
   if (def) {
     const given = Object.prototype.hasOwnProperty.call(g.values, def.id);
-    const w = lp && given && !['int', 'hex'].includes(_genKind(typed(def), g)) ? Math.min(_meEffLen(def, g), String(g.values[def.id]).length) : undefined;
-    _genField(typed(def), g.cursor, g, w);
+    const w = lp && given && !['int', 'hex', 'bcd'].includes(_genKind(typed(def), g)) ? Math.min(_meEffLen(def, g), String(g.values[def.id]).length) : undefined;
+    put(def, w);
   } else {
     let leaves = defs.filter(d => !d.isRedefines && d.id.startsWith(id + '.'));
     if (!leaves.length) {
@@ -43949,7 +44022,7 @@ function _genRead(attrs, g) {
       if (occ.length > 1) g.occNext[id] = k + 1;
       leaves = occ[k].filter(d => !d.isRedefines);
     }
-    for (const d of leaves) _genField(typed(d), g.cursor, g);
+    for (const d of leaves) put(d);
   }
   if (!lp) return;
   // The prefix: the bytes that follow it, as digits when they fit, else binary —
@@ -43969,7 +44042,10 @@ function _genReadWindow(o, g) {
   const e = o.until ? defs.findIndex(d => d.id === _meResolveDefRef(defs, o.until, 'last')) : defs.length - 1;
   if (s < 0 || e < 0) { g.problems.push(`read: "${s < 0 ? o.from : o.until}" is not in the bound DDL — skipped`); return; }
   if (e < s) { g.problems.push(`read: "${o.until}" comes before "${o.from}" — nothing written`); return; }
-  for (let i = s; i <= e; i++) if (defs[i].length > 0) _genField(o.type ? { ...defs[i], _genType: o.type } : defs[i], g.cursor, g);
+  for (let i = s; i <= e; i++) if (defs[i].length > 0) {
+    _meInlineBcdOverride(g, defs[i].id, o.type);
+    _genField(o.type ? { ...defs[i], _genType: o.type } : defs[i], g.cursor, g);
+  }
 }
 // A length's bytes in `w`, as `type` reads them: a binary integer, BCD, hex
 // characters or hex text, else digits — in ASCII or EBCDIC when the type says,
@@ -43982,7 +44058,7 @@ function _genLenBytes(n, type, w, enc) {
     if (n >= 256 ** w) return null;
     b = []; for (let i = 0, x = n; i < w; i++, x = Math.floor(x / 256)) b.unshift(x % 256);
     if (_meLenTypeIsLE(t)) b.reverse();
-  } else if (_meLenTypeIsHexChar(t)) b = (String(n).padStart(w * 2, '0').match(/../g) || []).map(h => parseInt(h, 16));
+  } else if (_meLenTypeIsHexChar(t) || _meBcdPad(t)) b = (String(n).padStart(w * 2, '0').match(/../g) || []).map(h => parseInt(h, 16));
   else if (_meLenTypeIsHexText(t)) b = _genText(n.toString(16).toUpperCase().padStart(w, '0'), /ebcdic/i.test(t) ? 'ebcdic' : 'ascii');
   else b = _genText(String(n).padStart(w, '0'), _meLenTypeIsEbcdic(t) ? 'ebcdic' : _meLenTypeIsAscii(t) ? 'ascii' : enc);
   return b.length === w ? b : null;

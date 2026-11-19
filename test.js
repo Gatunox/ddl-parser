@@ -21193,6 +21193,34 @@ test('the length_mode pair shows the contrast it promises — same bytes, TAIL i
      'and the surplus byte is on screen under the name the card promises');
 });
 
+// Asked 2026-11-18: the reference names BCD wherever hex-char is, and its
+// examples show the values their headings promise.
+test('the BCD and hex-text examples show the values they promise', () => {
+  const run1 = (blk, re) => {
+    const ex = psHelp[blk].examples.find(e => !Array.isArray(e) && re.test(e.what));
+    assert.ok(ex, `${blk}: the example ${re} is not shipped`);
+    const fs = mePsHelpRunExample(ex).fields;
+    return { v: Object.fromEntries(fs.filter(f => !f.error).map(f => [f.id, f.value])), fs };
+  };
+  let r = run1('read', /type<\/b> bcd \/ bcd-f/);
+  deepEq([r.v.MTI, r.v.AMOUNT, r.v.TAIL], ['0200', '123', 'OK'], 'read: bcd / bcd-f');
+  r = run1('read', /type<\/b> bcd on bytes that are not BCD/);
+  eq(r.v.MTI, '00FF', 'read: a broken BCD is not shown as it is');
+  assert.ok(r.fs.some(f => /is not BCD/.test(f.issue || '')), 'read: a broken BCD is not said');
+  r = run1('read', /hex-char vs bcd/);
+  deepEq([r.v.RAW, r.v.NUM], ['0100', '0100'], 'read: hex-char and bcd do not agree on 01 00');
+  r = run1('read', /hex-ascii-decimal and hex-ebcdic-decimal/);
+  deepEq([String(r.v.HA), String(r.v.HE)], ['255', '255'], 'read: the hex text in ASCII and EBCDIC is not 255');
+  r = run1('read-length-value', /length_encoding<\/b> bcd with/);
+  eq(r.v.PAYLOAD, 'ABCDE', 'read-length-value: a 3-byte bcd length');
+  r = run1('read-length-value', /length_encoding<\/b> bcd-f/);
+  eq(r.v.PAYLOAD, 'ABCD', 'read-length-value: a bcd-f length');
+  r = run1('read-fixed', /encoding<\/b> bcd —/);
+  eq(r.v.MTI, '0200', 'read-fixed: bcd');
+  r = run1('read-fixed', /encoding<\/b> bcd-f/);
+  eq(r.v.AMOUNT, '123', 'read-fixed: bcd-f');
+});
+
 test('every executable example produces the fields it claims to', () => {
   // The panel RUNS these against their own payloads, so a broken one is not a
   // stale sentence — it is an error table under a heading that promises a result.
@@ -26413,9 +26441,10 @@ console.log('\ngenerate a message');
       eq(run('_followMti({ bytes: [0x58, 0x01, 0x1A] })'), '', 'Follow takes a hex nibble for an MTI digit');
     } finally { run('_meSpecForMsg = __osm'); }
     assert.ok(/case 'mti': \{[\s\S]{0,80}encSel\('encoding',\['ascii','ebcdic','bcd'\]/.test(APP_SRC), 'the recognizer editor does not offer bcd for an MTI');
-    // BCD is a field type, not a length encoding: a length in BCD is hex-char.
-    assert.ok(/is not a length encoding — use one of \$\{_ME_TYPE_OPTS\.filter\(t => t && !_meBcdPad\(t\)\)/.test(APP_SRC),
-      'the length_encoding lint offers bcd as a length encoding');
+    // A length in BCD is named bcd as well as hex-char (asked 2026-11-18): the
+    // lint offers every Type the Overrides column offers.
+    assert.ok(/is not a length encoding — use one of \$\{_ME_TYPE_OPTS\.filter\(t => t\)\.join/.test(APP_SRC),
+      'the length_encoding lint does not offer every Type, bcd among them');
   });
 
   test('[REGRESSION] bcd: a LEN marked as a length source sizes a BCD field after it by its digits', () => withBcd(() => {
@@ -26442,6 +26471,66 @@ console.log('\ngenerate a message');
     const de3 = m.des[3].leaves.find(f => f.id === 'DE-3');
     eq(de3.kind, 'num', 'a BCD row is not a number to the dialog');
     eq(de3.len, 6, 'a BCD row is not as long as its digits');
+  }));
+
+  test('[REGRESSION] bcd: a read block\'s own "type": "bcd" reads half the digits, as Overrides does, and Generate writes it', () => withBcd(() => {
+    const item = { name: 'RB', label: 'RB', ddl_bindings: ['BASE/DDL/BCD/BCDMSG'], parse_spec_binary: [
+      { read: { field: 'TYP', type: 'bcd' } }, { read: { field: 'DE-4', type: 'bcd-f' } }] };
+    let fs = parseHex(item, '0200 789F');
+    deepEq(probs(fs), [], 'read type bcd reports problems');
+    eq(byId(fs, 'TYP').value, '0200', 'read type bcd does not read the digits');
+    eq(byId(fs, 'TYP').endByte, 1, 'read type bcd does not take half the 9(4) digits');
+    eq(byId(fs, 'DE-4').value, '789', 'read type bcd-f does not drop the F pad');
+    eq(byId(fs, 'DE-4').startByte, 2, 'the field after a BCD read does not start after its 2 bytes');
+    // A nibble that is not a digit is shown, and said.
+    fs = parseHex(item, '00FF 789F');
+    eq(byId(fs, 'TYP').value, '00FF', 'a broken BCD does not show every nibble');
+    assert.ok(/is not BCD/.test(byId(fs, 'TYP').issue || ''), 'a broken BCD is not reported');
+    // The window form sizes each field the same way.
+    fs = parseHex({ ...item, parse_spec_binary: [{ read: { from: 'DE-3', until: 'DE-4', type: 'bcd' } }] }, '123456 0789');
+    eq(byId(fs, 'DE-3').value, '123456', 'a read window typed bcd does not read 9(6) in 3 bytes');
+    eq(byId(fs, 'DE-4').value, '789', 'a read window typed bcd does not read 9(3) in 2 bytes');
+    // The inline type is the block's alone: a later plain read of the same field is not BCD.
+    fs = parseHex({ ...item, parse_spec_binary: [{ read: { field: 'TYP', type: 'bcd' } }, { read: 'TYP' }] }, '0200 30323030');
+    eq(fs.filter(f => f.id === 'TYP').map(f => f.value).join(' '), '0200 0200', 'the BCD type leaks past its read');
+    eq(fs.filter(f => f.id === 'TYP')[1].endByte, 5, 'the BCD size leaks past its read');
+    eq(mePsLintWarns(item, item.parse_spec_binary).filter(w => /type/.test(w)).join(' | '), '', 'the lint does not accept a read typed bcd');
+    const r = gen(item, { values: { TYP: '0200', 'DE-4': '789' } });
+    deepEq(clean(r), [], 'a read typed bcd does not round-trip');
+    eq(_hex(r.out), '0200789F', 'a read typed bcd is not written in half its digits');
+  }));
+
+  test('[REGRESSION] bcd: read-length-value takes "length_encoding": "bcd" / "bcd-f" — read, linted and written', () => withBcd(() => {
+    const rlv = enc => ({ name: 'LV', label: 'LV', ddl_bindings: ['BASE/DDL/BCD/BCDMSG'],
+      parse_spec_binary: [{ 'read-length-value': { length_encoding: enc, length_size: 2, as: 'DATA' } }] });
+    let fs = parseHex(rlv('bcd'), '0003 414243');
+    deepEq(probs(fs), [], 'a bcd length reports problems');
+    eq(byId(fs, 'DATA').value, 'ABC', 'a bcd length 00 03 does not frame 3 bytes');
+    fs = parseHex(rlv('bcd-f'), '003F 414243');
+    eq(byId(fs, 'DATA').value, 'ABC', 'a bcd-f length 00 3F does not frame 3 bytes');
+    fs = parseHex(rlv('bcd'), '00FF 41');
+    assert.ok(/is not a number when read as bcd/.test(byId(fs, 'DATA').error || ''), 'a broken bcd length is not refused');
+    for (const enc of ['bcd', 'bcd-f']) {
+      const it = rlv(enc);
+      eq(mePsLintWarns(it, it.parse_spec_binary).join(' | '), '', `the lint refuses length_encoding ${enc}`);
+      const r = gen(it, { values: { DATA: 'ABC' } });
+      deepEq(clean(r), [], `length_encoding ${enc} does not round-trip`);
+      eq(_hex(r.out), '0003414243', `length_encoding ${enc} is not written as BCD digits`);
+    }
+  }));
+
+  test('[REGRESSION] numbers: "as": "bcd" reads a field\'s digits, and bytes that are not digits are refused, not 0', () => withBcd(() => {
+    const it = as => ({ name: 'AS', label: 'AS', ddl_bindings: ['BASE/DDL/BCD/BCDMSG'],
+      parse_spec_binary: [{ read: 'DE-5' }, { 'read-fixed': { length: { field: 'DE-5', as }, as: 'B' } }] });
+    let fs = parseHex(it('bcd'), '0003 414243');
+    deepEq(probs(fs), [], '"as": "bcd" reports problems');
+    eq(byId(fs, 'B').value, 'ABC', '"as": "bcd" does not read 00 03 as 3');
+    // 00 FF used to come out as 0 — parseInt stopped at the F — and read nothing, silently.
+    for (const as of ['bcd', 'hex-char']) {
+      fs = parseHex(it(as), '00FF 41');
+      assert.ok(probs(fs).some(p => p.includes(`cannot be read as ${as}`) && p.includes('"00FF"')),
+        `"as": "${as}" on 00 FF is not refused: ${JSON.stringify(probs(fs))}`);
+    }
   }));
 
   // Arithmetic on a number (TODO 21): one operation per operand object.

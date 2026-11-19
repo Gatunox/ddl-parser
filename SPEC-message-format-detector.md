@@ -517,6 +517,13 @@ another field already covers, so its position is the point of it.
 Reading the same non-repeated group twice therefore advances — the second read
 takes the next bytes — rather than repeating or reporting "all occurrences read".
 
+**`type`** reads the field as one of the Type column's types (§9) for this block
+only. A fixed-width type must fit the declared length, or it is refused and said.
+`bcd` / `bcd-f` are sized like the Type column's: half the DDL's digits, so a
+`9(4)` is read in 2 bytes and the fields after it follow. The window form
+(`from` / `until`) and a group's leaves are sized the same way, each by its own
+digits. Generate writes them at that size.
+
 ### 5.8 `read-while` — guard-bounded loop
 
 For variable-count loops where a count field is **unavailable or unreliable** (canonical case: ASCII PSTM where `NUM-SERVICES` is binary and the only way to know if another service follows is to peek at the next 2 bytes for the service-tag convention).
@@ -1065,9 +1072,11 @@ take, **how to decode** them, and **what the number counts**.
 
 **The encodings are the app's, not any one block's** — every name the Overrides
 **Type** column offers reads a length: `uint8` · `uint16-be` · `uint16-le` ·
-`uint-be` · `uint-le` · `binary` · `ascii` · `ebcdic` · `hex-char` ·
-`hex-ascii-decimal` · `hex-ebcdic-decimal`. `read-length-value` adds `bcd2`
+`uint-be` · `uint-le` · `binary` · `ascii` · `ebcdic` · `hex-char` · `bcd` ·
+`bcd-f` · `hex-ascii-decimal` · `hex-ebcdic-decimal`. `read-length-value` adds `bcd2`
 (2 bytes of packed BCD), which is the one shape the shared decoder does not know.
+A BCD length reads the same as `bcd` or as `hex-char` — a length cannot hold an
+a–f nibble, so both refuse one; `bcd-f` also drops an F pad behind.
 
 **Width.** `uint8` implies 1, `uint16-*` and `bcd2` imply 2, `uint32-*` imply 4.
 Every other name says how the bytes *read*, not how many there are, so it needs an
@@ -1217,6 +1226,9 @@ that references it; then base 10.
 The digits a base permits are checked before the value is believed: `parseInt`
 stops at the first character it dislikes and returns what it read, so `"1A"` in
 base 10 would come back as **1** — a wrong length that looks like a right one.
+`as` is held to the same rule: the whole value the type gives must be a number,
+so `00 FF` read `{"as": "bcd"}` or `{"as": "hex-char"}` — "00FF" — is an error
+naming the field and what it holds, never 0.
 
 ### 5.19b A number can be worked out — one operation per operand object
 
@@ -1921,8 +1933,16 @@ length counting digits (`"count": "digits"`) sizes it, what that length says; th
 nibbles beyond them are the pad and are dropped. A nibble that is not a digit, or
 a pad that is not `0` / `F`, shows every nibble and is reported on the row. A LEN
 typed BCD reads as its number. An ISO `LLVAR` / `LLLVAR` keeps its ASCII prefix,
-which then counts digits: `16` is 8 bytes. A BCD **length** in front of a field is read with `hex-char`
-(and `"count": "digits"` when it counts digits) — no separate name.
+which then counts digits: `16` is 8 bytes. A BCD **length** in front of a field is
+typed `bcd` or `hex-char` — both read its digits — with `"count": "digits"` when
+it counts digits.
+
+**BCD and `hex-char`.** On BCD bytes `hex-char` gives the same digits, but it is
+sized in bytes, keeps the pad nibble and reports nothing: `00 FF` is "00FF" either
+way, flagged only by `bcd`. A numeric field in BCD takes `bcd`; `hex-char` is for
+bytes that may hold anything. Neither takes a character set: a BCD digit is a
+nibble, the same on every host — `ascii`, `ebcdic` and the `hex-…-decimal` pair
+exist because there a digit is a whole byte, written in one set or the other.
 
 The names `hex-ascii` and `hex-ebcdic` are not accepted; write the `-decimal` forms.
 
